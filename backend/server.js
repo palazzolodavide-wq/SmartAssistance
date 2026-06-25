@@ -2,7 +2,6 @@
 const cors = require("cors");
 const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
-const { Pool } = require("pg");
 const { searchAmazon } = require("./services/amazon");
 const { searchCreators } = require("./services/creators");
 const {
@@ -14,19 +13,12 @@ const {
   getRecommendedOffers
 } = require("./services/recommendations");
 require("dotenv").config();
-
+const pool = require("./utils/db");
 const app = express();
 
 app.use(cors());
 app.use(express.json());
 
-const pool = new Pool({
-  host: process.env.DB_HOST,
-  port: process.env.DB_PORT,
-  database: process.env.DB_NAME,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-});
 
 /*
 |--------------------------------------------------------------------------
