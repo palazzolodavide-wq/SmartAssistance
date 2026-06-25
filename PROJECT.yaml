@@ -1,0 +1,16 @@
+project:
+  name: Smart Assistance
+  codename: Enterprise Foundation
+version:
+  current: 0.6.0
+repository:
+  default_branch: main
+technology:
+  frontend: Next.js
+  backend: Express
+  database: PostgreSQL
+deployment:
+  docker: true
+security:
+  authentication: JWT
+  password_hashing: bcrypt
