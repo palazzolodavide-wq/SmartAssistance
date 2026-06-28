@@ -187,6 +187,32 @@ export default function CustomerPage() {
       background: "#dc2626",
       color: "white",
     },
+    guideCard: {
+      display: "flex",
+      gap: "12px",
+      alignItems: "flex-start",
+      background: "rgba(255,255,255,.06)",
+      border: "1px solid rgba(255,255,255,.08)",
+      borderRadius: "16px",
+      padding: "14px",
+    },
+    guideIcon: {
+      width: "42px",
+      height: "42px",
+      minWidth: "42px",
+      borderRadius: "14px",
+      background: "rgba(37,99,235,.22)",
+      display: "flex",
+      justifyContent: "center",
+      alignItems: "center",
+      fontSize: "22px",
+    },
+    guideText: {
+      margin: "6px 0 0",
+      color: "#cbd5e1",
+      fontSize: "13px",
+      lineHeight: 1.45,
+    },
     nav: {
       position: "fixed",
       left: "12px",
@@ -447,6 +473,7 @@ export default function CustomerPage() {
         {tab === "support" && (
           <>
             <h1 style={{ marginTop: 0 }}>💬 Assistenza</h1>
+
             <section style={styles.card}>
               <h2 style={{ marginTop: 0 }}>Siamo qui per aiutarti</h2>
               <p style={{ color: "#cbd5e1", lineHeight: 1.5 }}>
@@ -468,6 +495,79 @@ export default function CustomerPage() {
                 }}
               >
                 Scrivici su WhatsApp
+              </button>
+            </section>
+
+            <section style={styles.card}>
+              <h2 style={{ marginTop: 0 }}>📚 Guide rapide</h2>
+              <p style={{ color: "#cbd5e1", lineHeight: 1.5 }}>
+                Piccoli consigli utili per usare meglio il tuo smartphone ogni giorno.
+              </p>
+
+              <div style={{ display: "grid", gap: "12px" }}>
+                <div style={styles.guideCard}>
+                  <div style={styles.guideIcon}>🔋</div>
+                  <div>
+                    <strong>Risparmiare batteria</strong>
+                    <p style={styles.guideText}>
+                      Chiudi le app inutili, riduci la luminosità e attiva il risparmio energetico quando serve.
+                    </p>
+                  </div>
+                </div>
+
+                <div style={styles.guideCard}>
+                  <div style={styles.guideIcon}>🛡</div>
+                  <div>
+                    <strong>Proteggere il telefono</strong>
+                    <p style={styles.guideText}>
+                      Usa vetro temperato, cover adeguata e blocco schermo con PIN, impronta o volto.
+                    </p>
+                  </div>
+                </div>
+
+                <div style={styles.guideCard}>
+                  <div style={styles.guideIcon}>☁️</div>
+                  <div>
+                    <strong>Backup foto e contatti</strong>
+                    <p style={styles.guideText}>
+                      Verifica che Google Foto, Samsung Cloud o iCloud siano configurati correttamente.
+                    </p>
+                  </div>
+                </div>
+
+                <div style={styles.guideCard}>
+                  <div style={styles.guideIcon}>📶</div>
+                  <div>
+                    <strong>Wi‑Fi e connessione</strong>
+                    <p style={styles.guideText}>
+                      Se internet è lento, riavvia il telefono e controlla rete Wi‑Fi, dati mobili e aggiornamenti.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section style={styles.card}>
+              <h2 style={{ marginTop: 0 }}>📞 Contatti utili</h2>
+              <p style={{ color: "#cbd5e1", lineHeight: 1.5, marginBottom: "14px" }}>
+                Salva questa WebApp nella schermata Home per ritrovare assistenza, garanzia e consigli in un solo tocco.
+              </p>
+
+              <button
+                onClick={openWhatsApp}
+                style={{
+                  width: "100%",
+                  border: "1px solid rgba(37,211,102,.45)",
+                  borderRadius: "16px",
+                  padding: "15px",
+                  background: "rgba(37,211,102,.12)",
+                  color: "#bbf7d0",
+                  fontWeight: "bold",
+                  fontSize: "16px",
+                  cursor: "pointer",
+                }}
+              >
+                Chiedi informazioni
               </button>
             </section>
           </>
