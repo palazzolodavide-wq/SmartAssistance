@@ -111,6 +111,60 @@ app.post("/api/login", async (req, res) => {
 
 /*
 |--------------------------------------------------------------------------
+| ADMIN AUTH MIDDLEWARE
+|--------------------------------------------------------------------------
+*/
+
+function authenticateAdmin(req, res, next) {
+  const publicApiRoutes = [
+    /^\/api\/app\/[^/]+$/,
+    /^\/api\/app\/[^/]+\/click$/
+  ];
+
+  const isPublicApiRoute = publicApiRoutes.some((route) =>
+    route.test(req.path)
+  );
+
+  if (isPublicApiRoute) {
+    return next();
+  }
+
+  const authHeader = req.headers.authorization || "";
+  const token = authHeader.startsWith("Bearer ")
+    ? authHeader.substring(7)
+    : null;
+
+  if (!token) {
+    return res.status(401).json({
+      success: false,
+      error: "Token mancante"
+    });
+  }
+
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+    if (decoded.role !== "admin") {
+      return res.status(403).json({
+        success: false,
+        error: "Accesso non autorizzato"
+      });
+    }
+
+    req.user = decoded;
+    next();
+  } catch (err) {
+    return res.status(401).json({
+      success: false,
+      error: "Token non valido o scaduto"
+    });
+  }
+}
+
+app.use("/api", authenticateAdmin);
+
+/*
+|--------------------------------------------------------------------------
 | USERS
 |--------------------------------------------------------------------------
 */

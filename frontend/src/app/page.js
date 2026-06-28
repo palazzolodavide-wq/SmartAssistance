@@ -20,6 +20,7 @@ const BRANDS = [
 ];
 
 export default function Home() {
+  const [authReady, setAuthReady] = useState(false);
   const [users, setUsers] = useState([]);
   const [devices, setDevices] = useState([]);
 const [userSearch, setUserSearch] = useState("");
@@ -164,19 +165,59 @@ const expiringDevices = devices.filter((d) => {
     note: "",
   });
 
+  function getAuthToken() {
+    if (typeof window === "undefined") {
+      return "";
+    }
+
+    return localStorage.getItem("token") || "";
+  }
+
+  async function apiFetch(url, options = {}) {
+    const token = getAuthToken();
+
+    if (!token) {
+      window.location.href = "/login";
+      throw new Error("Accesso non effettuato");
+    }
+
+    const headers = {
+      ...(options.headers || {}),
+      Authorization: `Bearer ${token}`,
+    };
+
+    const res = await fetch(url, {
+      ...options,
+      headers,
+    });
+
+    if (res.status === 401 || res.status === 403) {
+      localStorage.removeItem("token");
+      window.location.href = "/login";
+      throw new Error("Sessione scaduta");
+    }
+
+    return res;
+  }
+
+  function logout() {
+    localStorage.removeItem("token");
+    window.location.href = "/login";
+  }
+
   async function loadData() {
     try {
-          const usersRes = await fetch(`${API_URL}/api/users`);
+          const usersRes = await apiFetch(`${API_URL}/api/users`);
           const usersData = await usersRes.json();
 
-          const devicesRes = await fetch(`${API_URL}/api/devices`);
+          const devicesRes = await apiFetch(`${API_URL}/api/devices`);
           const devicesData = await devicesRes.json();
 
-          const offersRes = await fetch(`${API_URL}/api/offers`);
+          const offersRes = await apiFetch(`${API_URL}/api/offers`);
           const offersData = await offersRes.json();
 
           try {
-            const statsRes = await fetch(`${API_URL}/api/stats/clicks`);
+            const statsRes = await apiFetch(`${API_URL}/api/stats/clicks`);
             const statsData = await statsRes.json();
 
             if (statsData.success) {
@@ -196,6 +237,14 @@ const expiringDevices = devices.filter((d) => {
   }
 
   useEffect(() => {
+    const token = getAuthToken();
+
+    if (!token) {
+      window.location.href = "/login";
+      return;
+    }
+
+    setAuthReady(true);
     loadData();
   }, []);
 
@@ -206,7 +255,7 @@ const expiringDevices = devices.filter((d) => {
 
     const isEdit = editingUserId !== null;
 
-    const res = await fetch(
+    const res = await apiFetch(
       isEdit
         ? `${API_URL}/api/users/${editingUserId}`
         : `${API_URL}/api/users`,
@@ -261,7 +310,7 @@ const expiringDevices = devices.filter((d) => {
     try {
       const isEdit = editingDeviceId !== null;
 
-      const res = await fetch(
+      const res = await apiFetch(
         isEdit
           ? `${API_URL}/api/devices/${editingDeviceId}`
           : `${API_URL}/api/devices`,
@@ -312,7 +361,7 @@ const expiringDevices = devices.filter((d) => {
 
     try {
 
-      const res = await fetch(
+      const res = await apiFetch(
         `${API_URL}/api/users/${id}`,
         {
           method: "DELETE",
@@ -344,7 +393,7 @@ const expiringDevices = devices.filter((d) => {
 
     try {
 
-      const res = await fetch(
+      const res = await apiFetch(
         `${API_URL}/api/devices/${id}`,
         {
           method: "DELETE",
@@ -378,7 +427,7 @@ const expiringDevices = devices.filter((d) => {
 
     try {
 
-      const res = await fetch(
+      const res = await apiFetch(
         `${API_URL}/api/offers/${id}`,
         {
           method: "DELETE",
@@ -411,7 +460,7 @@ const expiringDevices = devices.filter((d) => {
 
       const isEdit = editingOfferId !== null;
 
-      const res = await fetch(
+      const res = await apiFetch(
         isEdit
           ? `${API_URL}/api/offers/${editingOfferId}`
           : `${API_URL}/api/offers`,
@@ -455,7 +504,7 @@ async function searchAmazon() {
 
   try {
 
-    const res = await fetch(
+    const res = await apiFetch(
       `${API_URL}/api/amazon/search?q=${encodeURIComponent(amazonSearch)}`
     );
 
@@ -483,7 +532,7 @@ async function importAmazonProduct(item) {
         affiliate_url: item.DetailPageURL || "",
         image_url: item.Images?.Primary?.Medium?.URL || ""
       };
-      const res = await fetch(
+      const res = await apiFetch(
           `${API_URL}/api/offers`,
           {
             method: "POST",
@@ -553,6 +602,19 @@ function openCustomerApp(user) {
 
 
 
+  if (!authReady) {
+    return (
+      <main
+        style={{
+          padding: "30px",
+          fontFamily: "Arial",
+        }}
+      >
+        Verifica accesso...
+      </main>
+    );
+  }
+
   return (
     <main
       style={{
@@ -562,7 +624,32 @@ function openCustomerApp(user) {
         margin: "0 auto",
       }}
     >
-      <h1>Smart Assistance</h1>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          gap: "16px",
+          marginBottom: "20px",
+        }}
+      >
+        <h1 style={{ margin: 0 }}>Smart Assistance</h1>
+
+        <button
+          type="button"
+          onClick={logout}
+          style={{
+            border: "1px solid #ddd",
+            background: "#f8fafc",
+            borderRadius: "8px",
+            padding: "10px 14px",
+            cursor: "pointer",
+            fontWeight: "bold",
+          }}
+        >
+          Logout
+        </button>
+      </div>
 
       <div
         style={{
