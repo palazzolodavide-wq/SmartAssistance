@@ -20,6 +20,7 @@ export default function CustomerPage() {
   const [tab, setTab] = useState("home");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [installPrompt, setInstallPrompt] = useState(null);
 
   useEffect(() => {
     async function load() {
@@ -52,6 +53,19 @@ export default function CustomerPage() {
       load();
     }
   }, [token]);
+
+  useEffect(() => {
+    function handleBeforeInstallPrompt(event) {
+      event.preventDefault();
+      setInstallPrompt(event);
+    }
+
+    window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+
+    return () => {
+      window.removeEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+    };
+  }, []);
 
   const customerName = `${data.customer?.nome || ""} ${data.customer?.cognome || ""}`.trim();
   const deviceName = `${data.device?.marca || ""} ${data.device?.modello || ""}`.trim();
@@ -111,6 +125,28 @@ export default function CustomerPage() {
     window.location.href = `https://wa.me/${WHATSAPP_NUMBER}?text=${message}`;
   }
 
+  async function installWebApp() {
+    if (installPrompt) {
+      installPrompt.prompt();
+
+      try {
+        await installPrompt.userChoice;
+      } catch (err) {
+        // Nessuna azione: il browser può non restituire una scelta.
+      }
+
+      setInstallPrompt(null);
+      return;
+    }
+
+    alert(
+      "Per installare Smart Assistance:\n\n" +
+      "1. Tocca il menu del browser (⋮)\n" +
+      "2. Scegli 'Aggiungi a schermata Home'\n" +
+      "3. Conferma l'installazione"
+    );
+  }
+
   function formatDate(value) {
     if (!value) return "Non disponibile";
     return new Date(value).toLocaleDateString("it-IT");
@@ -155,6 +191,20 @@ export default function CustomerPage() {
       color: "#dbeafe",
       lineHeight: 1.5,
       fontSize: "15px",
+    },
+    installIconButton: {
+      width: "42px",
+      height: "42px",
+      minWidth: "42px",
+      border: "1px solid rgba(255,255,255,.20)",
+      borderRadius: "14px",
+      background: "rgba(255,255,255,.12)",
+      color: "white",
+      fontSize: "20px",
+      cursor: "pointer",
+      display: "flex",
+      justifyContent: "center",
+      alignItems: "center",
     },
     card: {
       background: "#111827",
@@ -365,7 +415,30 @@ export default function CustomerPage() {
         {tab === "home" && (
           <>
             <section style={styles.hero}>
-              <div style={styles.brand}>Smart Assistance</div>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  gap: "12px",
+                  marginBottom: "18px",
+                }}
+              >
+                <div style={{ ...styles.brand, marginBottom: 0 }}>
+                  Smart Assistance
+                </div>
+
+                <button
+                  type="button"
+                  onClick={installWebApp}
+                  title="Aggiungi alla Home"
+                  aria-label="Aggiungi alla Home"
+                  style={styles.installIconButton}
+                >
+                  📲
+                </button>
+              </div>
+
               <h1 style={styles.title}>Ciao {data.customer?.nome || customerName || ""} 👋</h1>
               <div style={styles.subtitle}>
                 Il tuo smartphone è sempre sotto controllo. Qui trovi garanzia,
