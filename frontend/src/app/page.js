@@ -277,7 +277,7 @@ const expiringDevices = devices.filter((d) => {
 
     if (!isEdit && data.user?.app_token) {
       const appUrl = getCustomerAppUrl(data.user);
-      alert(`Cliente creato. Link WebApp:\n${appUrl}`);
+      alert(`Cliente creato. Link WebApp:\n${appUrl}\n\nUsa i pulsanti Copia msg o WhatsApp nella tabella clienti.`);
     } else {
       alert(
         isEdit
@@ -598,6 +598,44 @@ function openCustomerApp(user) {
   }
 
   window.open(url, "_blank");
+}
+
+function getCustomerPhone(user) {
+  return (user?.telefono || "").replace(/\D/g, "");
+}
+
+function getCustomerOnboardingMessage(user) {
+  const url = getCustomerAppUrl(user);
+  const nome = user?.nome || "cliente";
+
+  return (
+    `Ciao ${nome}, ecco il link della tua WebApp Smart Assistance:\n\n` +
+    `${url}\n\n` +
+    "Da qui puoi vedere garanzia, assistenza e accessori consigliati per il tuo dispositivo."
+  );
+}
+
+async function copyCustomerOnboardingMessage(user) {
+  const message = getCustomerOnboardingMessage(user);
+
+  try {
+    await navigator.clipboard.writeText(message);
+    alert("Messaggio cliente copiato");
+  } catch (err) {
+    prompt("Copia il messaggio cliente", message);
+  }
+}
+
+function openCustomerWhatsApp(user) {
+  const phone = getCustomerPhone(user);
+  const message = encodeURIComponent(getCustomerOnboardingMessage(user));
+
+  if (!phone) {
+    alert("Telefono cliente non disponibile");
+    return;
+  }
+
+  window.open(`https://wa.me/39${phone.replace(/^39/, "")}?text=${message}`, "_blank");
 }
 
 
@@ -1382,6 +1420,7 @@ function openCustomerApp(user) {
       <th>Email</th>
       <th>Telefono</th>
       <th>WebApp</th>
+      <th>Onboarding</th>
       <th>Azione</th>
     </tr>
   </thead>
@@ -1425,6 +1464,30 @@ function openCustomerApp(user) {
             ) : (
               <span style={{ color: "#999" }}>
                 Token assente
+              </span>
+            )}
+          </td>
+          <td>
+            {u.app_token ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => copyCustomerOnboardingMessage(u)}
+                >
+                  Copia msg
+                </button>
+
+                <button
+                  type="button"
+                  style={{ marginLeft: "8px" }}
+                  onClick={() => openCustomerWhatsApp(u)}
+                >
+                  WhatsApp
+                </button>
+              </>
+            ) : (
+              <span style={{ color: "#999" }}>
+                Non disponibile
               </span>
             )}
           </td>
