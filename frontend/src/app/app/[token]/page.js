@@ -21,6 +21,7 @@ export default function CustomerPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [installPrompt, setInstallPrompt] = useState(null);
+  const [isInstalled, setIsInstalled] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -55,17 +56,56 @@ export default function CustomerPage() {
   }, [token]);
 
   useEffect(() => {
+    if (!token) return;
+
+    const standalone =
+      window.matchMedia?.("(display-mode: standalone)")?.matches ||
+      window.navigator.standalone === true;
+
+    setIsInstalled(standalone);
+
+    let manifestLink = document.querySelector('link[rel="manifest"]');
+
+    if (!manifestLink) {
+      manifestLink = document.createElement("link");
+      manifestLink.rel = "manifest";
+      document.head.appendChild(manifestLink);
+    }
+
+    manifestLink.href = `/manifest?token=${encodeURIComponent(token)}`;
+
+    let themeColor = document.querySelector('meta[name="theme-color"]');
+
+    if (!themeColor) {
+      themeColor = document.createElement("meta");
+      themeColor.name = "theme-color";
+      document.head.appendChild(themeColor);
+    }
+
+    themeColor.content = "#0f172a";
+
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("/sw.js").catch(() => {});
+    }
+
     function handleBeforeInstallPrompt(event) {
       event.preventDefault();
       setInstallPrompt(event);
     }
 
+    function handleAppInstalled() {
+      setInstallPrompt(null);
+      setIsInstalled(true);
+    }
+
     window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+    window.addEventListener("appinstalled", handleAppInstalled);
 
     return () => {
       window.removeEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+      window.removeEventListener("appinstalled", handleAppInstalled);
     };
-  }, []);
+  }, [token]);
 
   const customerName = `${data.customer?.nome || ""} ${data.customer?.cognome || ""}`.trim();
   const deviceName = `${data.device?.marca || ""} ${data.device?.modello || ""}`.trim();
@@ -126,25 +166,17 @@ export default function CustomerPage() {
   }
 
   async function installWebApp() {
-    if (installPrompt) {
-      installPrompt.prompt();
+    if (!installPrompt) return;
 
-      try {
-        await installPrompt.userChoice;
-      } catch (err) {
-        // Nessuna azione: il browser può non restituire una scelta.
-      }
+    installPrompt.prompt();
 
-      setInstallPrompt(null);
-      return;
+    try {
+      await installPrompt.userChoice;
+    } catch (err) {
+      // Il browser può non restituire una scelta.
     }
 
-    alert(
-      "Per installare Smart Assistance:\n\n" +
-      "1. Tocca il menu del browser (⋮)\n" +
-      "2. Scegli 'Aggiungi a schermata Home'\n" +
-      "3. Conferma l'installazione"
-    );
+    setInstallPrompt(null);
   }
 
   function formatDate(value) {
@@ -196,9 +228,9 @@ export default function CustomerPage() {
       width: "42px",
       height: "42px",
       minWidth: "42px",
-      border: "1px solid rgba(255,255,255,.20)",
+      border: "1px solid rgba(255,255,255,.22)",
       borderRadius: "14px",
-      background: "rgba(255,255,255,.12)",
+      background: "rgba(255,255,255,.14)",
       color: "white",
       fontSize: "20px",
       cursor: "pointer",
@@ -428,15 +460,17 @@ export default function CustomerPage() {
                   Smart Assistance
                 </div>
 
-                <button
-                  type="button"
-                  onClick={installWebApp}
-                  title="Aggiungi alla Home"
-                  aria-label="Aggiungi alla Home"
-                  style={styles.installIconButton}
-                >
-                  📲
-                </button>
+                {installPrompt && !isInstalled && (
+                  <button
+                    type="button"
+                    onClick={installWebApp}
+                    title="Installa Smart Assistance"
+                    aria-label="Installa Smart Assistance"
+                    style={styles.installIconButton}
+                  >
+                    📲
+                  </button>
+                )}
               </div>
 
               <h1 style={styles.title}>Ciao {data.customer?.nome || customerName || ""} 👋</h1>
