@@ -415,6 +415,79 @@ app.get("/api/app/:token", async (req, res) => {
   }
 });
 
+
+/*
+|--------------------------------------------------------------------------
+| CUSTOMER APP - OFFER CLICK TRACKING
+|--------------------------------------------------------------------------
+*/
+
+app.post("/api/app/:token/click", async (req, res) => {
+  try {
+    const { token } = req.params;
+    const {
+      asin,
+      titolo,
+      affiliate_url,
+      source
+    } = req.body || {};
+
+    if (!affiliate_url) {
+      return res.status(400).json({
+        success: false,
+        error: "affiliate_url mancante"
+      });
+    }
+
+    const customerResult = await pool.query(
+      "SELECT id FROM users WHERE app_token = $1",
+      [token]
+    );
+
+    if (customerResult.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: "Cliente non trovato"
+      });
+    }
+
+    await pool.query(
+      `
+      INSERT INTO offer_clicks (
+        user_id,
+        app_token,
+        asin,
+        titolo,
+        affiliate_url,
+        source,
+        user_agent,
+        ip_address
+      )
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+      `,
+      [
+        customerResult.rows[0].id,
+        token,
+        asin || null,
+        titolo || null,
+        affiliate_url,
+        source || "webapp",
+        req.get("user-agent") || null,
+        req.ip || null
+      ]
+    );
+
+    res.json({
+      success: true
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      error: err.message
+    });
+  }
+});
+
 /*
 |--------------------------------------------------------------------------
 | DEVICES

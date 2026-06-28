@@ -125,8 +125,49 @@ export default function CustomerPage() {
     ];
   }, [data.recommendedOffers, data.trendingOffers]);
 
-  function openAffiliateLink(url) {
+  function trackOfferClick(offer, source = "webapp") {
+    if (!token || !offer?.affiliate_url) return;
+
+    const payload = JSON.stringify({
+      asin: offer.asin || null,
+      titolo: offer.titolo || null,
+      affiliate_url: offer.affiliate_url,
+      source
+    });
+
+    const endpoint = `/api/app/${token}/click`;
+
+    try {
+      if (navigator.sendBeacon) {
+        const blob = new Blob([payload], {
+          type: "application/json"
+        });
+
+        navigator.sendBeacon(endpoint, blob);
+        return;
+      }
+
+      fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: payload,
+        keepalive: true
+      }).catch(() => {});
+    } catch (err) {
+      // Il click deve aprire comunque il link affiliato.
+    }
+  }
+
+  function openAffiliateLink(offer, source = "webapp") {
+    const url = offer?.affiliate_url || offer;
+
     if (!url) return;
+
+    if (offer?.affiliate_url) {
+      trackOfferClick(offer, source);
+    }
 
     const isAndroid = /Android/i.test(navigator.userAgent);
     const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
@@ -411,7 +452,10 @@ export default function CustomerPage() {
           )}
         </div>
 
-        <button style={styles.cta} onClick={() => openAffiliateLink(offer.affiliate_url)}>
+        <button
+          style={styles.cta}
+          onClick={() => openAffiliateLink(offer, compact ? "trending" : "recommended")}
+        >
           Scopri →
         </button>
       </div>
