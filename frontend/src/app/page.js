@@ -95,6 +95,9 @@ export default function Home() {
   });
 
   const [qrModalUser, setQrModalUser] = useState(null);
+  const [receiptUploadModal, setReceiptUploadModal] = useState(null);
+  const [newCustomerReceiptQrAfterSave, setNewCustomerReceiptQrAfterSave] = useState(false);
+  const [deviceReceiptQrAfterSave, setDeviceReceiptQrAfterSave] = useState(false);
 
   const today = new Date();
 
@@ -285,6 +288,14 @@ export default function Home() {
     );
   }, [offers, offerSearch]);
 
+  const editingDevice = useMemo(() => {
+    if (!editingDeviceId) {
+      return null;
+    }
+
+    return devices.find((device) => device.id === editingDeviceId) || null;
+  }, [devices, editingDeviceId]);
+
   async function saveUser(e) {
     e.preventDefault();
 
@@ -322,6 +333,8 @@ export default function Home() {
         return;
       }
 
+      let createdDevice = null;
+
       if (!isEdit) {
         const createdUser = data.user;
 
@@ -349,6 +362,22 @@ export default function Home() {
             await loadData();
             return;
           }
+
+          createdDevice = deviceData.device;
+        }
+
+        setEditingUserId(null);
+        setUserForm(EMPTY_USER_FORM);
+        setNewCustomerDeviceForm(EMPTY_DEVICE_FORM);
+
+        const shouldOpenQr = newCustomerReceiptQrAfterSave && createdDevice?.id;
+        setNewCustomerReceiptQrAfterSave(false);
+
+        await loadData();
+
+        if (shouldOpenQr) {
+          await createReceiptUploadQr(createdDevice);
+          return;
         }
 
         if (createdUser?.app_token) {
@@ -361,13 +390,12 @@ export default function Home() {
         }
       } else {
         alert("Cliente aggiornato");
+
+        setEditingUserId(null);
+        setUserForm(EMPTY_USER_FORM);
+
+        await loadData();
       }
-
-      setEditingUserId(null);
-      setUserForm(EMPTY_USER_FORM);
-      setNewCustomerDeviceForm(EMPTY_DEVICE_FORM);
-
-      await loadData();
     } catch (err) {
       alert(err.message);
     }
@@ -382,6 +410,7 @@ export default function Home() {
       telefono: user.telefono || "",
     });
 
+    setDeviceReceiptQrAfterSave(false);
     setActiveSection("customers");
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
@@ -456,12 +485,21 @@ export default function Home() {
         return;
       }
 
-      alert(isEdit ? "Dispositivo aggiornato" : "Dispositivo creato");
+      const savedDevice = data.device;
+      const shouldOpenQr = !isEdit && deviceReceiptQrAfterSave && savedDevice?.id;
 
       setEditingDeviceId(null);
       setDeviceForm(EMPTY_DEVICE_FORM);
+      setDeviceReceiptQrAfterSave(false);
 
       await loadData();
+
+      if (shouldOpenQr) {
+        await createReceiptUploadQr(savedDevice);
+        return;
+      }
+
+      alert(isEdit ? "Dispositivo aggiornato" : "Dispositivo creato");
     } catch (err) {
       alert(err.message);
     }
@@ -479,6 +517,7 @@ export default function Home() {
       note: device.note || "",
     });
 
+    setDeviceReceiptQrAfterSave(false);
     setActiveSection("customers");
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
@@ -735,6 +774,189 @@ export default function Home() {
 
   function closeCustomerQr() {
     setQrModalUser(null);
+  }
+
+  function readReceiptFileAsDataUrl(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(new Error("Impossibile leggere il file"));
+
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function uploadDeviceReceipt(device, event) {
+    const file = event.target.files?.[0];
+
+    if (!file) {
+      return;
+    }
+
+    const allowedTypes = [
+      "application/pdf",
+      "image/jpeg",
+      "image/png",
+      "image/webp",
+    ];
+
+    try {
+      if (!allowedTypes.includes(file.type)) {
+        alert("Formato non supportato. Usa PDF, JPG, PNG o WEBP.");
+        event.target.value = "";
+        return;
+      }
+
+      if (file.size > 5 * 1024 * 1024) {
+        alert("File troppo grande. Limite massimo 5 MB.");
+        event.target.value = "";
+        return;
+      }
+
+      const dataUrl = await readReceiptFileAsDataUrl(file);
+
+      const res = await apiFetch(`${API_URL}/api/devices/${device.id}/receipt`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          filename: file.name,
+          mime_type: file.type,
+          data_url: dataUrl,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!data.success) {
+        alert(data.error || "Errore caricamento scontrino");
+        return;
+      }
+
+      alert("Scontrino caricato");
+      await loadData();
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      event.target.value = "";
+    }
+  }
+
+  async function deleteDeviceReceipt(device) {
+    if (!confirm("Vuoi rimuovere lo scontrino da questo dispositivo?")) {
+      return;
+    }
+
+    try {
+      const res = await apiFetch(`${API_URL}/api/devices/${device.id}/receipt`, {
+        method: "DELETE",
+      });
+
+      const data = await res.json();
+
+      if (!data.success) {
+        alert(data.error || "Errore rimozione scontrino");
+        return;
+      }
+
+      alert("Scontrino rimosso");
+      await loadData();
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
+  function openDeviceReceipt(device) {
+    if (!device?.receipt_data_url) {
+      alert("Scontrino non disponibile");
+      return;
+    }
+
+    const win = window.open();
+
+    if (!win) {
+      alert("Popup bloccato dal browser");
+      return;
+    }
+
+    win.document.write(`
+      <!doctype html>
+      <html>
+        <head>
+          <title>Scontrino ${device.marca || ""} ${device.modello || ""}</title>
+          <meta charset="utf-8" />
+          <style>
+            body {
+              margin: 0;
+              background: #111827;
+              color: white;
+              font-family: Arial, sans-serif;
+            }
+
+            iframe, img {
+              width: 100vw;
+              height: 100vh;
+              border: 0;
+              object-fit: contain;
+              background: #111827;
+            }
+          </style>
+        </head>
+        <body>
+          ${
+            device.receipt_mime_type === "application/pdf"
+              ? `<iframe src="${device.receipt_data_url}"></iframe>`
+              : `<img src="${device.receipt_data_url}" alt="Scontrino" />`
+          }
+        </body>
+      </html>
+    `);
+
+    win.document.close();
+  }
+
+  async function createReceiptUploadQr(device) {
+    try {
+      const res = await apiFetch(`${API_URL}/api/devices/${device.id}/receipt-upload-token`, {
+        method: "POST",
+      });
+
+      const data = await res.json();
+
+      if (!data.success) {
+        alert(data.error || "Errore generazione QR upload");
+        return;
+      }
+
+      const uploadUrl = `${window.location.origin}/receipt-upload/${data.token}`;
+
+      setReceiptUploadModal({
+        device,
+        uploadUrl,
+        expires_at: data.expires_at,
+      });
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
+  function getReceiptUploadQrImageUrl(url) {
+    return `https://api.qrserver.com/v1/create-qr-code/?size=260x260&margin=10&data=${encodeURIComponent(url)}`;
+  }
+
+  async function copyReceiptUploadUrl() {
+    if (!receiptUploadModal?.uploadUrl) {
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(receiptUploadModal.uploadUrl);
+      alert("Link upload copiato");
+    } catch (err) {
+      prompt("Copia link upload", receiptUploadModal.uploadUrl);
+    }
   }
 
   function renderTopbarTitle() {
@@ -1237,6 +1459,30 @@ export default function Home() {
           border: 1px solid #e5e7eb;
         }
 
+        .inline-info-box {
+          border: 1px solid #e2e8f0;
+          border-radius: 16px;
+          padding: 14px;
+          background: #f8fafc;
+          display: grid;
+          gap: 10px;
+        }
+
+        .checkbox-row {
+          display: flex;
+          align-items: flex-start;
+          gap: 10px;
+          font-weight: 800;
+          color: #0f172a;
+          line-height: 1.35;
+          cursor: pointer;
+        }
+
+        .checkbox-row input {
+          width: auto;
+          margin-top: 2px;
+        }
+
         .mobile-nav {
           display: none;
         }
@@ -1583,6 +1829,24 @@ export default function Home() {
                           onChange={(e) => setNewCustomerDeviceForm({ ...newCustomerDeviceForm, note: e.target.value })}
                         />
                       </Field>
+
+                      <div className="inline-info-box">
+                        <div>
+                          <div className="row-title">Scontrino acquisto</div>
+                          <div className="row-subtitle">
+                            Il dispositivo viene creato prima del QR. Subito dopo il salvataggio apriamo il QR per caricarlo da telefono.
+                          </div>
+                        </div>
+
+                        <label className="checkbox-row">
+                          <input
+                            type="checkbox"
+                            checked={newCustomerReceiptQrAfterSave}
+                            onChange={(e) => setNewCustomerReceiptQrAfterSave(e.target.checked)}
+                          />
+                          Genera QR telefono dopo la creazione
+                        </label>
+                      </div>
                     </>
                   )}
 
@@ -1696,6 +1960,56 @@ export default function Home() {
                     />
                   </Field>
 
+                  <div className="inline-info-box">
+                    <div>
+                      <div className="row-title">Scontrino acquisto</div>
+                      <div className="row-subtitle">
+                        {editingDeviceId
+                          ? "Gestisci subito lo scontrino del dispositivo selezionato."
+                          : "Il dispositivo viene creato prima del QR. Subito dopo il salvataggio apriamo il QR per caricarlo da telefono."}
+                      </div>
+                    </div>
+
+                    {editingDeviceId && editingDevice ? (
+                      <div className="action-row">
+                        <button type="button" className="primary-button" onClick={() => createReceiptUploadQr(editingDevice)}>
+                          QR telefono
+                        </button>
+
+                        {editingDevice.receipt_data_url && (
+                          <>
+                            <button type="button" className="small-button" onClick={() => openDeviceReceipt(editingDevice)}>
+                              Apri
+                            </button>
+
+                            <button type="button" className="danger-button" onClick={() => deleteDeviceReceipt(editingDevice)}>
+                              Rimuovi
+                            </button>
+                          </>
+                        )}
+
+                        <label className="small-button" style={{ cursor: "pointer" }}>
+                          {editingDevice.receipt_data_url ? "Sostituisci da PC" : "Carica da PC"}
+                          <input
+                            type="file"
+                            accept="application/pdf,image/jpeg,image/png,image/webp"
+                            style={{ display: "none" }}
+                            onChange={(event) => uploadDeviceReceipt(editingDevice, event)}
+                          />
+                        </label>
+                      </div>
+                    ) : (
+                      <label className="checkbox-row">
+                        <input
+                          type="checkbox"
+                          checked={deviceReceiptQrAfterSave}
+                          onChange={(e) => setDeviceReceiptQrAfterSave(e.target.checked)}
+                        />
+                        Genera QR telefono dopo il salvataggio
+                      </label>
+                    )}
+                  </div>
+
                   <div className="form-actions">
                     <button type="submit" className="primary-button">
                       {editingDeviceId ? "Salva dispositivo" : "Aggiungi dispositivo"}
@@ -1708,6 +2022,7 @@ export default function Home() {
                         onClick={() => {
                           setEditingDeviceId(null);
                           setDeviceForm(EMPTY_DEVICE_FORM);
+                          setDeviceReceiptQrAfterSave(false);
                         }}
                       >
                         Annulla
@@ -1843,6 +2158,7 @@ export default function Home() {
                         <th>Cliente</th>
                         <th>Dispositivo</th>
                         <th>Garanzia</th>
+                        <th>Scontrino</th>
                         <th>Note</th>
                         <th>Azioni</th>
                       </tr>
@@ -1850,7 +2166,7 @@ export default function Home() {
                     <tbody>
                       {filteredDevices.length === 0 ? (
                         <tr>
-                          <td colSpan="5">Nessun dispositivo trovato.</td>
+                          <td colSpan="6">Nessun dispositivo trovato.</td>
                         </tr>
                       ) : (
                         filteredDevices.map((device) => (
@@ -1867,6 +2183,40 @@ export default function Home() {
                               <span className={getWarrantyClass(device.scadenza_garanzia)}>
                                 {formatDate(device.scadenza_garanzia)}
                               </span>
+                            </td>
+                            <td>
+                              <div className="action-row">
+                                {device.receipt_data_url && (
+                                  <>
+                                    <button type="button" className="small-button" onClick={() => openDeviceReceipt(device)}>
+                                      Apri
+                                    </button>
+                                    <button type="button" className="danger-button" onClick={() => deleteDeviceReceipt(device)}>
+                                      Rimuovi
+                                    </button>
+                                  </>
+                                )}
+
+                                <label className="small-button" style={{ cursor: "pointer" }}>
+                                  {device.receipt_data_url ? "Sostituisci" : "Carica da PC"}
+                                  <input
+                                    type="file"
+                                    accept="application/pdf,image/jpeg,image/png,image/webp"
+                                    style={{ display: "none" }}
+                                    onChange={(event) => uploadDeviceReceipt(device, event)}
+                                  />
+                                </label>
+
+                                <button type="button" className="primary-button" onClick={() => createReceiptUploadQr(device)}>
+                                  QR telefono
+                                </button>
+                              </div>
+
+                              {device.receipt_uploaded_at && (
+                                <div className="row-subtitle">
+                                  Caricato il {formatDate(device.receipt_uploaded_at)}
+                                </div>
+                              )}
                             </td>
                             <td>{device.note || "-"}</td>
                             <td>
@@ -2398,6 +2748,56 @@ export default function Home() {
                 <button type="button" className="primary-button" onClick={() => openCustomerApp(qrModalUser)}>
                   Apri WebApp
                 </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {receiptUploadModal && (
+          <div className="qr-backdrop" onClick={() => setReceiptUploadModal(null)}>
+            <div className="qr-modal" onClick={(e) => e.stopPropagation()}>
+              <div className="panel-header">
+                <div>
+                  <h2 className="panel-title">Upload scontrino da telefono</h2>
+                  <div className="panel-subtitle">
+                    {receiptUploadModal.device.marca} {receiptUploadModal.device.modello}
+                  </div>
+                </div>
+
+                <button type="button" className="ghost-button" onClick={() => setReceiptUploadModal(null)}>
+                  Chiudi
+                </button>
+              </div>
+
+              <div style={{ textAlign: "center", marginTop: "16px" }}>
+                <img
+                  className="qr-image"
+                  src={getReceiptUploadQrImageUrl(receiptUploadModal.uploadUrl)}
+                  alt="QR upload scontrino"
+                />
+              </div>
+
+              <div style={{ marginTop: "16px" }}>
+                <input
+                  readOnly
+                  value={receiptUploadModal.uploadUrl}
+                  onFocus={(e) => e.target.select()}
+                />
+              </div>
+
+              <div className="form-actions" style={{ marginTop: "14px" }}>
+                <button type="button" className="soft-button" onClick={copyReceiptUploadUrl}>
+                  Copia link
+                </button>
+
+                <button type="button" className="primary-button" onClick={() => window.open(receiptUploadModal.uploadUrl, "_blank")}>
+                  Apri pagina
+                </button>
+              </div>
+
+              <div className="panel-subtitle" style={{ marginTop: "14px", lineHeight: 1.5 }}>
+                Scansiona il QR con il telefono del negozio, fotografa lo scontrino e caricalo direttamente.
+                Il link scade alle {new Date(receiptUploadModal.expires_at).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })}.
               </div>
             </div>
           </div>

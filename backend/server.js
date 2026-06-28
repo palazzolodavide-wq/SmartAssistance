@@ -2,6 +2,7 @@ const express = require("express");
 const cors = require("cors");
 const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
+const crypto = require("crypto");
 const { searchAmazon } = require("./services/amazon");
 const { searchCreators } = require("./services/creators");
 const {
@@ -17,7 +18,7 @@ const pool = require("./utils/db");
 const app = express();
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: "12mb" }));
 
 
 /*
@@ -118,11 +119,17 @@ app.post("/api/login", async (req, res) => {
 function authenticateAdmin(req, res, next) {
   const publicApiRoutes = [
     /^\/api\/app\/[^/]+$/,
-    /^\/api\/app\/[^/]+\/click$/
+    /^\/api\/app\/[^/]+\/click$/,
+    /^\/api\/receipt-upload\/[^/]+$/,
+    /^\/api\/receipt-upload\/[^/]+\/receipt$/,
+    /^\/app\/[^/]+$/,
+    /^\/app\/[^/]+\/click$/,
+    /^\/receipt-upload\/[^/]+$/,
+    /^\/receipt-upload\/[^/]+\/receipt$/
   ];
 
   const isPublicApiRoute = publicApiRoutes.some((route) =>
-    route.test(req.path)
+    route.test(req.originalUrl) || route.test(req.path)
   );
 
   if (isPublicApiRoute) {
@@ -386,12 +393,17 @@ app.get("/api/app/:token", async (req, res) => {
     const devicesResult = await pool.query(
       `
       SELECT
+        id,
         marca,
         modello,
         data_acquisto,
         scadenza_garanzia,
         note,
-        categoria
+        categoria,
+        receipt_filename,
+        receipt_mime_type,
+        receipt_data_url,
+        receipt_uploaded_at
       FROM devices
       WHERE user_id = $1
       ORDER BY created_at DESC
@@ -615,16 +627,240 @@ app.get("/api/stats/clicks", async (req, res) => {
 |--------------------------------------------------------------------------
 */
 
+
+/*
+|--------------------------------------------------------------------------
+| PUBLIC RECEIPT UPLOAD
+|--------------------------------------------------------------------------
+*/
+
+app.get("/api/receipt-upload/:token", async (req, res) => {
+  try {
+    const { token } = req.params;
+
+    const result = await pool.query(
+      `
+      SELECT
+        rut.token,
+        rut.expires_at,
+        rut.used_at,
+        d.id AS device_id,
+        d.marca,
+        d.modello,
+        d.categoria,
+        d.receipt_filename,
+        d.receipt_uploaded_at,
+        u.customer_code,
+        u.nome,
+        u.cognome
+      FROM receipt_upload_tokens rut
+      JOIN devices d
+        ON rut.device_id = d.id
+      JOIN users u
+        ON d.user_id = u.id
+      WHERE rut.token = $1
+      `,
+      [token]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: "Link non valido"
+      });
+    }
+
+    const item = result.rows[0];
+
+    if (item.used_at) {
+      return res.status(410).json({
+        success: false,
+        error: "Questo link è già stato usato"
+      });
+    }
+
+    if (new Date(item.expires_at) < new Date()) {
+      return res.status(410).json({
+        success: false,
+        error: "Link scaduto. Genera un nuovo QR dall'admin."
+      });
+    }
+
+    res.json({
+      success: true,
+      expires_at: item.expires_at,
+      device: {
+        id: item.device_id,
+        marca: item.marca,
+        modello: item.modello,
+        categoria: item.categoria,
+        receipt_filename: item.receipt_filename,
+        receipt_uploaded_at: item.receipt_uploaded_at
+      },
+      customer: {
+        customer_code: item.customer_code,
+        nome: item.nome,
+        cognome: item.cognome
+      }
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      error: err.message
+    });
+  }
+});
+
+app.post("/api/receipt-upload/:token/receipt", async (req, res) => {
+  try {
+    const { token } = req.params;
+
+    const {
+      filename,
+      mime_type,
+      data_url
+    } = req.body;
+
+    const allowedMimeTypes = [
+      "application/pdf",
+      "image/jpeg",
+      "image/png",
+      "image/webp"
+    ];
+
+    if (!filename || !mime_type || !data_url) {
+      return res.status(400).json({
+        success: false,
+        error: "Dati scontrino mancanti"
+      });
+    }
+
+    if (!allowedMimeTypes.includes(mime_type)) {
+      return res.status(400).json({
+        success: false,
+        error: "Formato non supportato. Usa PDF, JPG, PNG o WEBP."
+      });
+    }
+
+    if (!String(data_url).startsWith(`data:${mime_type};base64,`)) {
+      return res.status(400).json({
+        success: false,
+        error: "Formato file non valido"
+      });
+    }
+
+    if (String(data_url).length > 10 * 1024 * 1024) {
+      return res.status(400).json({
+        success: false,
+        error: "File troppo grande. Limite massimo 5 MB circa."
+      });
+    }
+
+    const tokenResult = await pool.query(
+      `
+      SELECT
+        rut.token,
+        rut.device_id,
+        rut.expires_at,
+        rut.used_at
+      FROM receipt_upload_tokens rut
+      WHERE rut.token = $1
+      `,
+      [token]
+    );
+
+    if (tokenResult.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: "Link non valido"
+      });
+    }
+
+    const uploadToken = tokenResult.rows[0];
+
+    if (uploadToken.used_at) {
+      return res.status(410).json({
+        success: false,
+        error: "Questo link è già stato usato"
+      });
+    }
+
+    if (new Date(uploadToken.expires_at) < new Date()) {
+      return res.status(410).json({
+        success: false,
+        error: "Link scaduto. Genera un nuovo QR dall'admin."
+      });
+    }
+
+    const client = await pool.connect();
+
+    try {
+      await client.query("BEGIN");
+
+      const deviceResult = await client.query(
+        `
+        UPDATE devices
+        SET
+          receipt_filename = $1,
+          receipt_mime_type = $2,
+          receipt_data_url = $3,
+          receipt_uploaded_at = NOW()
+        WHERE id = $4
+        RETURNING *
+        `,
+        [
+          filename,
+          mime_type,
+          data_url,
+          uploadToken.device_id
+        ]
+      );
+
+      await client.query(
+        `
+        UPDATE receipt_upload_tokens
+        SET used_at = NOW()
+        WHERE token = $1
+        `,
+        [token]
+      );
+
+      await client.query("COMMIT");
+
+      res.json({
+        success: true,
+        device: deviceResult.rows[0]
+      });
+    } catch (err) {
+      await client.query("ROLLBACK");
+      throw err;
+    } finally {
+      client.release();
+    }
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      error: err.message
+    });
+  }
+});
+
 app.get("/api/devices", async (req, res) => {
   try {
     const result = await pool.query(`
       SELECT
         d.id,
+        d.user_id,
         d.marca,
         d.modello,
+        d.categoria,
         d.data_acquisto,
         d.scadenza_garanzia,
         d.note,
+        d.receipt_filename,
+        d.receipt_mime_type,
+        d.receipt_data_url,
+        d.receipt_uploaded_at,
         u.customer_code,
         u.nome,
         u.cognome,
@@ -762,6 +998,214 @@ WHERE id = $7
   }
 });
 
+
+
+
+/*
+|--------------------------------------------------------------------------
+| DEVICE RECEIPT PHONE UPLOAD TOKEN
+|--------------------------------------------------------------------------
+*/
+
+app.post("/api/devices/:id/receipt-upload-token", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const deviceResult = await pool.query(
+      `
+      SELECT
+        d.id,
+        d.marca,
+        d.modello,
+        d.categoria,
+        u.nome,
+        u.cognome,
+        u.customer_code
+      FROM devices d
+      JOIN users u
+        ON d.user_id = u.id
+      WHERE d.id = $1
+      `,
+      [id]
+    );
+
+    if (deviceResult.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: "Dispositivo non trovato"
+      });
+    }
+
+    await pool.query(
+      `
+      DELETE FROM receipt_upload_tokens
+      WHERE device_id = $1
+        AND (
+          used_at IS NOT NULL
+          OR expires_at < NOW()
+        )
+      `,
+      [id]
+    );
+
+    const token = crypto.randomBytes(32).toString("hex");
+
+    const result = await pool.query(
+      `
+      INSERT INTO receipt_upload_tokens (
+        token,
+        device_id,
+        expires_at
+      )
+      VALUES (
+        $1,
+        $2,
+        NOW() + INTERVAL '30 minutes'
+      )
+      RETURNING token, expires_at
+      `,
+      [token, id]
+    );
+
+    res.json({
+      success: true,
+      token: result.rows[0].token,
+      expires_at: result.rows[0].expires_at,
+      device: deviceResult.rows[0]
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      error: err.message
+    });
+  }
+});
+
+/*
+|--------------------------------------------------------------------------
+| DEVICE RECEIPT
+|--------------------------------------------------------------------------
+*/
+
+app.put("/api/devices/:id/receipt", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const {
+      filename,
+      mime_type,
+      data_url
+    } = req.body;
+
+    const allowedMimeTypes = [
+      "application/pdf",
+      "image/jpeg",
+      "image/png",
+      "image/webp"
+    ];
+
+    if (!filename || !mime_type || !data_url) {
+      return res.status(400).json({
+        success: false,
+        error: "Dati scontrino mancanti"
+      });
+    }
+
+    if (!allowedMimeTypes.includes(mime_type)) {
+      return res.status(400).json({
+        success: false,
+        error: "Formato non supportato. Usa PDF, JPG, PNG o WEBP."
+      });
+    }
+
+    if (!String(data_url).startsWith(`data:${mime_type};base64,`)) {
+      return res.status(400).json({
+        success: false,
+        error: "Formato file non valido"
+      });
+    }
+
+    if (String(data_url).length > 10 * 1024 * 1024) {
+      return res.status(400).json({
+        success: false,
+        error: "File troppo grande. Limite massimo 5 MB circa."
+      });
+    }
+
+    const result = await pool.query(
+      `
+      UPDATE devices
+      SET
+        receipt_filename = $1,
+        receipt_mime_type = $2,
+        receipt_data_url = $3,
+        receipt_uploaded_at = NOW()
+      WHERE id = $4
+      RETURNING *
+      `,
+      [
+        filename,
+        mime_type,
+        data_url,
+        id
+      ]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: "Dispositivo non trovato"
+      });
+    }
+
+    res.json({
+      success: true,
+      device: result.rows[0]
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      error: err.message
+    });
+  }
+});
+
+app.delete("/api/devices/:id/receipt", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const result = await pool.query(
+      `
+      UPDATE devices
+      SET
+        receipt_filename = NULL,
+        receipt_mime_type = NULL,
+        receipt_data_url = NULL,
+        receipt_uploaded_at = NULL
+      WHERE id = $1
+      RETURNING *
+      `,
+      [id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: "Dispositivo non trovato"
+      });
+    }
+
+    res.json({
+      success: true,
+      device: result.rows[0]
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      error: err.message
+    });
+  }
+});
 
 app.delete("/api/devices/:id", async (req, res) => {
   try {

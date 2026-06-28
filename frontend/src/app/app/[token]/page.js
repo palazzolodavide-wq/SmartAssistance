@@ -206,6 +206,54 @@ export default function CustomerPage() {
     window.location.href = `https://wa.me/${WHATSAPP_NUMBER}?text=${message}`;
   }
 
+  function openReceipt(device) {
+    if (!device?.receipt_data_url) {
+      return;
+    }
+
+    const win = window.open();
+
+    if (!win) {
+      window.location.href = device.receipt_data_url;
+      return;
+    }
+
+    win.document.write(`
+      <!doctype html>
+      <html>
+        <head>
+          <title>Scontrino ${device.marca || ""} ${device.modello || ""}</title>
+          <meta charset="utf-8" />
+          <style>
+            body {
+              margin: 0;
+              background: #0f172a;
+              color: white;
+              font-family: Arial, sans-serif;
+            }
+
+            iframe, img {
+              width: 100vw;
+              height: 100vh;
+              border: 0;
+              object-fit: contain;
+              background: #0f172a;
+            }
+          </style>
+        </head>
+        <body>
+          ${
+            device.receipt_mime_type === "application/pdf"
+              ? `<iframe src="${device.receipt_data_url}"></iframe>`
+              : `<img src="${device.receipt_data_url}" alt="Scontrino" />`
+          }
+        </body>
+      </html>
+    `);
+
+    win.document.close();
+  }
+
   async function installWebApp() {
     if (!installPrompt) return;
 
@@ -534,6 +582,27 @@ export default function CustomerPage() {
               <div style={{ color: "#cbd5e1" }}>
                 🛡 Garanzia fino al {formatDate(data.device?.scadenza_garanzia)}
               </div>
+
+              {data.device?.receipt_data_url && (
+                <button
+                  type="button"
+                  onClick={() => openReceipt(data.device)}
+                  style={{
+                    width: "100%",
+                    border: "none",
+                    borderRadius: "16px",
+                    padding: "14px",
+                    marginTop: "14px",
+                    background: "#f59e0b",
+                    color: "#111827",
+                    fontWeight: "bold",
+                    fontSize: "15px",
+                    cursor: "pointer",
+                  }}
+                >
+                  🧾 Apri scontrino acquisto
+                </button>
+              )}
             </section>
 
             {data.recommendedOffers?.length > 0 && (
@@ -610,6 +679,32 @@ export default function CustomerPage() {
                   <div style={{ color: "#cbd5e1" }}>
                     🛡 Garanzia fino al {formatDate(device.scadenza_garanzia)}
                   </div>
+
+                  {device.receipt_data_url ? (
+                    <button
+                      type="button"
+                      onClick={() => openReceipt(device)}
+                      style={{
+                        width: "100%",
+                        border: "none",
+                        borderRadius: "16px",
+                        padding: "14px",
+                        marginTop: "14px",
+                        background: "#f59e0b",
+                        color: "#111827",
+                        fontWeight: "bold",
+                        fontSize: "15px",
+                        cursor: "pointer",
+                      }}
+                    >
+                      🧾 Apri scontrino acquisto
+                    </button>
+                  ) : (
+                    <div style={{ color: "#94a3b8", marginTop: "10px", fontSize: "14px" }}>
+                      Scontrino non disponibile.
+                    </div>
+                  )}
+
                   {device.note && (
                     <div style={{ color: "#94a3b8", marginTop: "10px" }}>
                       {device.note}
