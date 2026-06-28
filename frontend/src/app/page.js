@@ -48,8 +48,7 @@ const EMPTY_OFFER_FORM = {
 
 const NAV_ITEMS = [
   { id: "dashboard", label: "Dashboard", icon: "📊" },
-  { id: "customers", label: "Clienti", icon: "👥" },
-  { id: "devices", label: "Dispositivi", icon: "📱" },
+  { id: "customers", label: "Clienti & Device", icon: "👥" },
   { id: "offers", label: "Offerte", icon: "🎁" },
   { id: "stats", label: "Statistiche", icon: "📈" },
 ];
@@ -72,6 +71,7 @@ export default function Home() {
   const [editingOfferId, setEditingOfferId] = useState(null);
 
   const [userForm, setUserForm] = useState(EMPTY_USER_FORM);
+  const [newCustomerDeviceForm, setNewCustomerDeviceForm] = useState(EMPTY_DEVICE_FORM);
   const [deviceForm, setDeviceForm] = useState(EMPTY_DEVICE_FORM);
   const [offerForm, setOfferForm] = useState(EMPTY_OFFER_FORM);
 
@@ -285,6 +285,13 @@ export default function Home() {
     try {
       const isEdit = editingUserId !== null;
 
+      if (!isEdit) {
+        if (!newCustomerDeviceForm.marca || !newCustomerDeviceForm.modello) {
+          alert("Per creare un nuovo cliente devi inserire anche marca e modello del dispositivo.");
+          return;
+        }
+      }
+
       const res = await apiFetch(
         isEdit
           ? `${API_URL}/api/users/${editingUserId}`
@@ -305,17 +312,50 @@ export default function Home() {
         return;
       }
 
-      if (!isEdit && data.user?.app_token) {
-        const appUrl = getCustomerAppUrl(data.user);
-        alert(
-          `Cliente creato. Link WebApp:\n${appUrl}\n\nUsa i pulsanti Copia msg, WhatsApp o QR nella tabella clienti.`
-        );
+      if (!isEdit) {
+        const createdUser = data.user;
+
+        if (createdUser?.id) {
+          const devicePayload = {
+            ...newCustomerDeviceForm,
+            user_id: createdUser.id,
+          };
+
+          const deviceRes = await apiFetch(`${API_URL}/api/devices`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(devicePayload),
+          });
+
+          const deviceData = await deviceRes.json();
+
+          if (!deviceData.success) {
+            alert(
+              "Cliente creato, ma il dispositivo non è stato salvato: " +
+              (deviceData.error || "errore dispositivo")
+            );
+            await loadData();
+            return;
+          }
+        }
+
+        if (createdUser?.app_token) {
+          const appUrl = getCustomerAppUrl(createdUser);
+          alert(
+            `Cliente e dispositivo creati.\n\nLink WebApp:\n${appUrl}\n\nUsa Copia msg, WhatsApp o QR nella tabella clienti.`
+          );
+        } else {
+          alert("Cliente e dispositivo creati.");
+        }
       } else {
-        alert(isEdit ? "Cliente aggiornato" : "Cliente creato");
+        alert("Cliente aggiornato");
       }
 
       setEditingUserId(null);
       setUserForm(EMPTY_USER_FORM);
+      setNewCustomerDeviceForm(EMPTY_DEVICE_FORM);
 
       await loadData();
     } catch (err) {
@@ -334,6 +374,21 @@ export default function Home() {
 
     setActiveSection("customers");
     window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function startAddDeviceForCustomer(user) {
+    setEditingDeviceId(null);
+    setDeviceForm({
+      ...EMPTY_DEVICE_FORM,
+      user_id: user.id,
+    });
+    setActiveSection("customers");
+    setTimeout(() => {
+      const el = document.getElementById("existing-device-form");
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    }, 80);
   }
 
   async function deleteUser(id) {
@@ -414,7 +469,7 @@ export default function Home() {
       note: device.note || "",
     });
 
-    setActiveSection("devices");
+    setActiveSection("customers");
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
@@ -1192,7 +1247,7 @@ export default function Home() {
 
           .mobile-nav {
             display: grid;
-            grid-template-columns: repeat(5, 1fr);
+            grid-template-columns: repeat(4, 1fr);
             position: fixed;
             left: 10px;
             right: 10px;
@@ -1285,7 +1340,7 @@ export default function Home() {
           <div>
             <h1 className="page-title">{renderTopbarTitle()}</h1>
             <div className="page-subtitle">
-              Gestione clienti, dispositivi, offerte affiliate e onboarding WebApp.
+              Gestione clienti con dispositivo, offerte affiliate e onboarding WebApp.
             </div>
           </div>
 
@@ -1400,165 +1455,412 @@ export default function Home() {
 
         {!loading && activeSection === "customers" && (
           <section className="section-grid">
-            <div className="panel">
-              <div className="panel-header">
-                <div>
-                  <h2 className="panel-title">
-                    {editingUserId ? "Modifica cliente" : "Nuovo cliente"}
-                  </h2>
-                  <div className="panel-subtitle">
-                    Dati base per WebApp e onboarding.
+            <div>
+              <div className="panel">
+                <div className="panel-header">
+                  <div>
+                    <h2 className="panel-title">
+                      {editingUserId ? "Modifica cliente" : "Nuovo cliente + dispositivo"}
+                    </h2>
+                    <div className="panel-subtitle">
+                      Il flusso corretto è cliente + primo dispositivo. Se il cliente esiste già, aggiungi solo il dispositivo.
+                    </div>
                   </div>
                 </div>
+
+                <form className="form-grid" onSubmit={saveUser}>
+                  <Field label="Nome">
+                    <input
+                      required
+                      value={userForm.nome}
+                      onChange={(e) => setUserForm({ ...userForm, nome: e.target.value })}
+                    />
+                  </Field>
+
+                  <Field label="Cognome">
+                    <input
+                      required
+                      value={userForm.cognome}
+                      onChange={(e) => setUserForm({ ...userForm, cognome: e.target.value })}
+                    />
+                  </Field>
+
+                  <Field label="Email">
+                    <input
+                      type="email"
+                      value={userForm.email}
+                      onChange={(e) => setUserForm({ ...userForm, email: e.target.value })}
+                    />
+                  </Field>
+
+                  <Field label="Telefono">
+                    <input
+                      value={userForm.telefono}
+                      onChange={(e) => setUserForm({ ...userForm, telefono: e.target.value })}
+                    />
+                  </Field>
+
+                  {!editingUserId && (
+                    <>
+                      <div
+                        style={{
+                          marginTop: "8px",
+                          paddingTop: "14px",
+                          borderTop: "1px solid #e2e8f0",
+                        }}
+                      >
+                        <h3 style={{ margin: "0 0 4px" }}>Primo dispositivo</h3>
+                        <div className="panel-subtitle">
+                          Obbligatorio quando registri un nuovo cliente.
+                        </div>
+                      </div>
+
+                      <Field label="Marca">
+                        <select
+                          required
+                          value={newCustomerDeviceForm.marca}
+                          onChange={(e) => setNewCustomerDeviceForm({ ...newCustomerDeviceForm, marca: e.target.value })}
+                        >
+                          <option value="">Seleziona marca</option>
+                          {BRANDS.map((brand) => (
+                            <option key={brand} value={brand}>{brand}</option>
+                          ))}
+                        </select>
+                      </Field>
+
+                      <Field label="Modello">
+                        <input
+                          required
+                          value={newCustomerDeviceForm.modello}
+                          onChange={(e) => setNewCustomerDeviceForm({ ...newCustomerDeviceForm, modello: e.target.value })}
+                        />
+                      </Field>
+
+                      <Field label="Categoria">
+                        <input
+                          placeholder="smartphone, tablet, accessorio..."
+                          value={newCustomerDeviceForm.categoria}
+                          onChange={(e) => setNewCustomerDeviceForm({ ...newCustomerDeviceForm, categoria: e.target.value })}
+                        />
+                      </Field>
+
+                      <Field label="Data acquisto">
+                        <input
+                          type="date"
+                          value={newCustomerDeviceForm.data_acquisto}
+                          onChange={(e) => setNewCustomerDeviceForm({ ...newCustomerDeviceForm, data_acquisto: e.target.value })}
+                        />
+                      </Field>
+
+                      <Field label="Scadenza garanzia">
+                        <input
+                          type="date"
+                          value={newCustomerDeviceForm.scadenza_garanzia}
+                          onChange={(e) => setNewCustomerDeviceForm({ ...newCustomerDeviceForm, scadenza_garanzia: e.target.value })}
+                        />
+                      </Field>
+
+                      <Field label="Note dispositivo">
+                        <textarea
+                          value={newCustomerDeviceForm.note}
+                          onChange={(e) => setNewCustomerDeviceForm({ ...newCustomerDeviceForm, note: e.target.value })}
+                        />
+                      </Field>
+                    </>
+                  )}
+
+                  <div className="form-actions">
+                    <button type="submit" className="primary-button">
+                      {editingUserId ? "Salva cliente" : "Crea cliente + dispositivo"}
+                    </button>
+
+                    {editingUserId && (
+                      <button
+                        type="button"
+                        className="ghost-button"
+                        onClick={() => {
+                          setEditingUserId(null);
+                          setUserForm(EMPTY_USER_FORM);
+                        }}
+                      >
+                        Annulla
+                      </button>
+                    )}
+                  </div>
+                </form>
               </div>
 
-              <form className="form-grid" onSubmit={saveUser}>
-                <Field label="Nome">
-                  <input
-                    required
-                    value={userForm.nome}
-                    onChange={(e) => setUserForm({ ...userForm, nome: e.target.value })}
-                  />
-                </Field>
-
-                <Field label="Cognome">
-                  <input
-                    required
-                    value={userForm.cognome}
-                    onChange={(e) => setUserForm({ ...userForm, cognome: e.target.value })}
-                  />
-                </Field>
-
-                <Field label="Email">
-                  <input
-                    type="email"
-                    value={userForm.email}
-                    onChange={(e) => setUserForm({ ...userForm, email: e.target.value })}
-                  />
-                </Field>
-
-                <Field label="Telefono">
-                  <input
-                    value={userForm.telefono}
-                    onChange={(e) => setUserForm({ ...userForm, telefono: e.target.value })}
-                  />
-                </Field>
-
-                <div className="form-actions">
-                  <button type="submit" className="primary-button">
-                    {editingUserId ? "Salva modifiche" : "Crea cliente"}
-                  </button>
-
-                  {editingUserId && (
-                    <button
-                      type="button"
-                      className="ghost-button"
-                      onClick={() => {
-                        setEditingUserId(null);
-                        setUserForm(EMPTY_USER_FORM);
-                      }}
-                    >
-                      Annulla
-                    </button>
-                  )}
+              <div className="panel" id="existing-device-form">
+                <div className="panel-header">
+                  <div>
+                    <h2 className="panel-title">
+                      {editingDeviceId ? "Modifica dispositivo" : "Aggiungi dispositivo a cliente esistente"}
+                    </h2>
+                    <div className="panel-subtitle">
+                      Usa questo modulo quando il cliente è già registrato.
+                    </div>
+                  </div>
                 </div>
-              </form>
+
+                <form className="form-grid" onSubmit={saveDevice}>
+                  {!editingDeviceId && (
+                    <Field label="Cliente">
+                      <select
+                        required
+                        value={deviceForm.user_id}
+                        onChange={(e) => setDeviceForm({ ...deviceForm, user_id: e.target.value })}
+                      >
+                        <option value="">Seleziona cliente</option>
+                        {users.map((user) => (
+                          <option key={user.id} value={user.id}>
+                            {user.customer_code} - {user.nome} {user.cognome}
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+                  )}
+
+                  <Field label="Marca">
+                    <select
+                      required={!editingDeviceId}
+                      value={deviceForm.marca}
+                      onChange={(e) => setDeviceForm({ ...deviceForm, marca: e.target.value })}
+                    >
+                      <option value="">Seleziona marca</option>
+                      {BRANDS.map((brand) => (
+                        <option key={brand} value={brand}>{brand}</option>
+                      ))}
+                    </select>
+                  </Field>
+
+                  <Field label="Modello">
+                    <input
+                      required={!editingDeviceId}
+                      value={deviceForm.modello}
+                      onChange={(e) => setDeviceForm({ ...deviceForm, modello: e.target.value })}
+                    />
+                  </Field>
+
+                  <Field label="Categoria">
+                    <input
+                      placeholder="smartphone, tablet, accessorio..."
+                      value={deviceForm.categoria}
+                      onChange={(e) => setDeviceForm({ ...deviceForm, categoria: e.target.value })}
+                    />
+                  </Field>
+
+                  <Field label="Data acquisto">
+                    <input
+                      type="date"
+                      value={deviceForm.data_acquisto}
+                      onChange={(e) => setDeviceForm({ ...deviceForm, data_acquisto: e.target.value })}
+                    />
+                  </Field>
+
+                  <Field label="Scadenza garanzia">
+                    <input
+                      type="date"
+                      value={deviceForm.scadenza_garanzia}
+                      onChange={(e) => setDeviceForm({ ...deviceForm, scadenza_garanzia: e.target.value })}
+                    />
+                  </Field>
+
+                  <Field label="Note">
+                    <textarea
+                      value={deviceForm.note}
+                      onChange={(e) => setDeviceForm({ ...deviceForm, note: e.target.value })}
+                    />
+                  </Field>
+
+                  <div className="form-actions">
+                    <button type="submit" className="primary-button">
+                      {editingDeviceId ? "Salva dispositivo" : "Aggiungi dispositivo"}
+                    </button>
+
+                    {(editingDeviceId || deviceForm.user_id) && (
+                      <button
+                        type="button"
+                        className="ghost-button"
+                        onClick={() => {
+                          setEditingDeviceId(null);
+                          setDeviceForm(EMPTY_DEVICE_FORM);
+                        }}
+                      >
+                        Annulla
+                      </button>
+                    )}
+                  </div>
+                </form>
+              </div>
             </div>
 
-            <div className="panel">
-              <div className="toolbar">
-                <div>
-                  <h2 className="panel-title">Clienti registrati</h2>
-                  <div className="panel-subtitle">
-                    {filteredUsers.length} clienti visualizzati.
+            <div>
+              <div className="panel">
+                <div className="toolbar">
+                  <div>
+                    <h2 className="panel-title">Clienti registrati</h2>
+                    <div className="panel-subtitle">
+                      {filteredUsers.length} clienti visualizzati.
+                    </div>
                   </div>
+
+                  <input
+                    className="search-input"
+                    placeholder="Cerca cliente..."
+                    value={userSearch}
+                    onChange={(e) => setUserSearch(e.target.value)}
+                  />
                 </div>
 
-                <input
-                  className="search-input"
-                  placeholder="Cerca cliente..."
-                  value={userSearch}
-                  onChange={(e) => setUserSearch(e.target.value)}
-                />
+                <div className="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Cliente</th>
+                        <th>Contatti</th>
+                        <th>WebApp</th>
+                        <th>Onboarding</th>
+                        <th>Azioni</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredUsers.length === 0 ? (
+                        <tr>
+                          <td colSpan="5">Nessun cliente trovato.</td>
+                        </tr>
+                      ) : (
+                        filteredUsers.map((user) => (
+                          <tr key={user.id}>
+                            <td>
+                              <div className="row-title">
+                                {user.nome} {user.cognome}
+                              </div>
+                              <div className="row-subtitle">
+                                {user.customer_code || "-"}
+                              </div>
+                            </td>
+                            <td>
+                              <div>{user.email || "-"}</div>
+                              <div className="row-subtitle">{user.telefono || "-"}</div>
+                            </td>
+                            <td>
+                              {user.app_token ? (
+                                <div className="action-row">
+                                  <button type="button" className="small-button" onClick={() => openCustomerApp(user)}>
+                                    Apri
+                                  </button>
+                                  <button type="button" className="small-button" onClick={() => copyCustomerAppUrl(user)}>
+                                    Copia
+                                  </button>
+                                </div>
+                              ) : (
+                                <span className="badge badge-red">Token assente</span>
+                              )}
+                            </td>
+                            <td>
+                              {user.app_token ? (
+                                <div className="action-row">
+                                  <button type="button" className="small-button" onClick={() => copyCustomerOnboardingMessage(user)}>
+                                    Copia msg
+                                  </button>
+                                  <button type="button" className="small-button" onClick={() => openCustomerWhatsApp(user)}>
+                                    WhatsApp
+                                  </button>
+                                  <button type="button" className="small-button" onClick={() => openCustomerQr(user)}>
+                                    QR
+                                  </button>
+                                </div>
+                              ) : (
+                                <span className="row-subtitle">Non disponibile</span>
+                              )}
+                            </td>
+                            <td>
+                              <div className="action-row">
+                                <button type="button" className="soft-button" onClick={() => startAddDeviceForCustomer(user)}>
+                                  Aggiungi device
+                                </button>
+                                <button type="button" className="soft-button" onClick={() => editUser(user)}>
+                                  Modifica
+                                </button>
+                                <button type="button" className="danger-button" onClick={() => deleteUser(user.id)}>
+                                  Elimina
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </div>
 
-              <div className="table-wrap">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Cliente</th>
-                      <th>Contatti</th>
-                      <th>WebApp</th>
-                      <th>Onboarding</th>
-                      <th>Azioni</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredUsers.length === 0 ? (
+              <div className="panel">
+                <div className="toolbar">
+                  <div>
+                    <h2 className="panel-title">Dispositivi associati</h2>
+                    <div className="panel-subtitle">
+                      {filteredDevices.length} dispositivi visualizzati.
+                    </div>
+                  </div>
+
+                  <input
+                    className="search-input"
+                    placeholder="Cerca dispositivo..."
+                    value={deviceSearch}
+                    onChange={(e) => setDeviceSearch(e.target.value)}
+                  />
+                </div>
+
+                <div className="table-wrap">
+                  <table>
+                    <thead>
                       <tr>
-                        <td colSpan="5">Nessun cliente trovato.</td>
+                        <th>Cliente</th>
+                        <th>Dispositivo</th>
+                        <th>Garanzia</th>
+                        <th>Note</th>
+                        <th>Azioni</th>
                       </tr>
-                    ) : (
-                      filteredUsers.map((user) => (
-                        <tr key={user.id}>
-                          <td>
-                            <div className="row-title">
-                              {user.nome} {user.cognome}
-                            </div>
-                            <div className="row-subtitle">
-                              {user.customer_code || "-"}
-                            </div>
-                          </td>
-                          <td>
-                            <div>{user.email || "-"}</div>
-                            <div className="row-subtitle">{user.telefono || "-"}</div>
-                          </td>
-                          <td>
-                            {user.app_token ? (
-                              <div className="action-row">
-                                <button type="button" className="small-button" onClick={() => openCustomerApp(user)}>
-                                  Apri
-                                </button>
-                                <button type="button" className="small-button" onClick={() => copyCustomerAppUrl(user)}>
-                                  Copia
-                                </button>
-                              </div>
-                            ) : (
-                              <span className="badge badge-red">Token assente</span>
-                            )}
-                          </td>
-                          <td>
-                            {user.app_token ? (
-                              <div className="action-row">
-                                <button type="button" className="small-button" onClick={() => copyCustomerOnboardingMessage(user)}>
-                                  Copia msg
-                                </button>
-                                <button type="button" className="small-button" onClick={() => openCustomerWhatsApp(user)}>
-                                  WhatsApp
-                                </button>
-                                <button type="button" className="small-button" onClick={() => openCustomerQr(user)}>
-                                  QR
-                                </button>
-                              </div>
-                            ) : (
-                              <span className="row-subtitle">Non disponibile</span>
-                            )}
-                          </td>
-                          <td>
-                            <div className="action-row">
-                              <button type="button" className="soft-button" onClick={() => editUser(user)}>
-                                Modifica
-                              </button>
-                              <button type="button" className="danger-button" onClick={() => deleteUser(user.id)}>
-                                Elimina
-                              </button>
-                            </div>
-                          </td>
+                    </thead>
+                    <tbody>
+                      {filteredDevices.length === 0 ? (
+                        <tr>
+                          <td colSpan="5">Nessun dispositivo trovato.</td>
                         </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
+                      ) : (
+                        filteredDevices.map((device) => (
+                          <tr key={device.id}>
+                            <td>
+                              <div className="row-title">{device.nome} {device.cognome}</div>
+                              <div className="row-subtitle">{device.customer_code || "-"}</div>
+                            </td>
+                            <td>
+                              <div className="row-title">{device.marca} {device.modello}</div>
+                              <div className="row-subtitle">{device.categoria || "-"}</div>
+                            </td>
+                            <td>
+                              <span className={getWarrantyClass(device.scadenza_garanzia)}>
+                                {formatDate(device.scadenza_garanzia)}
+                              </span>
+                            </td>
+                            <td>{device.note || "-"}</td>
+                            <td>
+                              <div className="action-row">
+                                <button type="button" className="soft-button" onClick={() => editDevice(device)}>
+                                  Modifica
+                                </button>
+                                <button type="button" className="danger-button" onClick={() => deleteDevice(device.id)}>
+                                  Elimina
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
           </section>
