@@ -38,6 +38,7 @@ const [clickStats, setClickStats] = useState({
   topProducts: [],
   recentClicks: [],
 });
+const [qrModalUser, setQrModalUser] = useState(null);
 const [amazonSearch, setAmazonSearch] = useState("");
 const [amazonResults, setAmazonResults] = useState([]);
 
@@ -277,7 +278,7 @@ const expiringDevices = devices.filter((d) => {
 
     if (!isEdit && data.user?.app_token) {
       const appUrl = getCustomerAppUrl(data.user);
-      alert(`Cliente creato. Link WebApp:\n${appUrl}\n\nUsa i pulsanti Copia msg o WhatsApp nella tabella clienti.`);
+      alert(`Cliente creato. Link WebApp:\n${appUrl}\n\nUsa i pulsanti Copia msg, WhatsApp o QR nella tabella clienti.`);
     } else {
       alert(
         isEdit
@@ -636,6 +637,31 @@ function openCustomerWhatsApp(user) {
   }
 
   window.open(`https://wa.me/39${phone.replace(/^39/, "")}?text=${message}`, "_blank");
+}
+
+function getCustomerQrImageUrl(user) {
+  const url = getCustomerAppUrl(user);
+
+  if (!url) {
+    return "";
+  }
+
+  return `https://api.qrserver.com/v1/create-qr-code/?size=240x240&margin=10&data=${encodeURIComponent(url)}`;
+}
+
+function openCustomerQr(user) {
+  const url = getCustomerAppUrl(user);
+
+  if (!url) {
+    alert("Token WebApp non disponibile per questo cliente");
+    return;
+  }
+
+  setQrModalUser(user);
+}
+
+function closeCustomerQr() {
+  setQrModalUser(null);
 }
 
 
@@ -1484,6 +1510,14 @@ function openCustomerWhatsApp(user) {
                 >
                   WhatsApp
                 </button>
+
+                <button
+                  type="button"
+                  style={{ marginLeft: "8px" }}
+                  onClick={() => openCustomerQr(u)}
+                >
+                  QR
+                </button>
               </>
             ) : (
               <span style={{ color: "#999" }}>
@@ -1619,6 +1653,136 @@ function openCustomerWhatsApp(user) {
       ))}
   </tbody>
 </table>
+
+    {qrModalUser && (
+      <div
+        onClick={closeCustomerQr}
+        style={{
+          position: "fixed",
+          inset: 0,
+          backgroundColor: "rgba(0, 0, 0, 0.55)",
+          display: "flex",
+          justifyContent: "center",
+          alignItems: "center",
+          padding: "20px",
+          zIndex: 9999
+        }}
+      >
+        <div
+          onClick={(e) => e.stopPropagation()}
+          style={{
+            width: "100%",
+            maxWidth: "420px",
+            backgroundColor: "#ffffff",
+            borderRadius: "20px",
+            padding: "20px",
+            boxShadow: "0 20px 50px rgba(0,0,0,0.25)"
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              gap: "10px"
+            }}
+          >
+            <div>
+              <div style={{ fontSize: "22px", fontWeight: "bold" }}>
+                QR WebApp cliente
+              </div>
+              <div style={{ color: "#666", marginTop: "4px" }}>
+                {qrModalUser.nome} {qrModalUser.cognome}
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={closeCustomerQr}
+            >
+              Chiudi
+            </button>
+          </div>
+
+          <div
+            style={{
+              marginTop: "18px",
+              textAlign: "center"
+            }}
+          >
+            <img
+              src={getCustomerQrImageUrl(qrModalUser)}
+              alt={`QR Code WebApp ${qrModalUser.nome || ""}`}
+              style={{
+                width: "240px",
+                maxWidth: "100%",
+                backgroundColor: "#fff",
+                padding: "10px",
+                borderRadius: "18px",
+                border: "1px solid #e5e7eb"
+              }}
+            />
+          </div>
+
+          <div style={{ marginTop: "16px" }}>
+            <input
+              type="text"
+              readOnly
+              value={getCustomerAppUrl(qrModalUser)}
+              onFocus={(e) => e.target.select()}
+              style={{
+                width: "100%",
+                padding: "10px 12px",
+                borderRadius: "10px",
+                border: "1px solid #d1d5db",
+                fontSize: "13px"
+              }}
+            />
+          </div>
+
+          <div
+            style={{
+              marginTop: "16px",
+              display: "flex",
+              gap: "8px",
+              flexWrap: "wrap"
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => copyCustomerAppUrl(qrModalUser)}
+            >
+              Copia link
+            </button>
+
+            <button
+              type="button"
+              onClick={() => copyCustomerOnboardingMessage(qrModalUser)}
+            >
+              Copia msg
+            </button>
+
+            <button
+              type="button"
+              onClick={() => openCustomerApp(qrModalUser)}
+            >
+              Apri WebApp
+            </button>
+          </div>
+
+          <div
+            style={{
+              marginTop: "14px",
+              fontSize: "13px",
+              color: "#666",
+              lineHeight: 1.5
+            }}
+          >
+            Mostra questo QR al cliente per aprire direttamente la sua WebApp Smart Assistance.
+          </div>
+        </div>
+      </div>
+    )}
     </main>
   );
 }
