@@ -20,6 +20,12 @@ const BRANDS = [
   "Altra",
 ];
 
+const PRODUCT_CATEGORIES = [
+  { value: "smartphone", label: "Smartphone" },
+  { value: "notebook", label: "Notebook" },
+  { value: "desktop", label: "Desktop" },
+];
+
 const EMPTY_USER_FORM = {
   nome: "",
   cognome: "",
@@ -286,8 +292,12 @@ export default function Home() {
       const isEdit = editingUserId !== null;
 
       if (!isEdit) {
-        if (!newCustomerDeviceForm.marca || !newCustomerDeviceForm.modello) {
-          alert("Per creare un nuovo cliente devi inserire anche marca e modello del dispositivo.");
+        if (
+          !newCustomerDeviceForm.marca ||
+          !newCustomerDeviceForm.modello ||
+          !newCustomerDeviceForm.categoria
+        ) {
+          alert("Per creare un nuovo cliente devi inserire anche categoria, marca e modello del dispositivo.");
           return;
         }
       }
@@ -1536,12 +1546,19 @@ export default function Home() {
                         />
                       </Field>
 
-                      <Field label="Categoria">
-                        <input
-                          placeholder="smartphone, tablet, accessorio..."
+                      <Field label="Categoria prodotto">
+                        <select
+                          required
                           value={newCustomerDeviceForm.categoria}
                           onChange={(e) => setNewCustomerDeviceForm({ ...newCustomerDeviceForm, categoria: e.target.value })}
-                        />
+                        >
+                          <option value="">Seleziona categoria</option>
+                          {PRODUCT_CATEGORIES.map((category) => (
+                            <option key={category.value} value={category.value}>
+                              {category.label}
+                            </option>
+                          ))}
+                        </select>
                       </Field>
 
                       <Field label="Data acquisto">
@@ -1641,12 +1658,19 @@ export default function Home() {
                     />
                   </Field>
 
-                  <Field label="Categoria">
-                    <input
-                      placeholder="smartphone, tablet, accessorio..."
+                  <Field label="Categoria prodotto">
+                    <select
+                      required
                       value={deviceForm.categoria}
                       onChange={(e) => setDeviceForm({ ...deviceForm, categoria: e.target.value })}
-                    />
+                    >
+                      <option value="">Seleziona categoria</option>
+                      {PRODUCT_CATEGORIES.map((category) => (
+                        <option key={category.value} value={category.value}>
+                          {category.label}
+                        </option>
+                      ))}
+                    </select>
                   </Field>
 
                   <Field label="Data acquisto">
@@ -1917,13 +1941,20 @@ export default function Home() {
                   />
                 </Field>
 
-                <Field label="Categoria">
-                  <input
-                    placeholder="smartphone, tablet, accessorio..."
-                    value={deviceForm.categoria}
-                    onChange={(e) => setDeviceForm({ ...deviceForm, categoria: e.target.value })}
-                  />
-                </Field>
+                <Field label="Categoria prodotto">
+                    <select
+                      required
+                      value={deviceForm.categoria}
+                      onChange={(e) => setDeviceForm({ ...deviceForm, categoria: e.target.value })}
+                    >
+                      <option value="">Seleziona categoria</option>
+                      {PRODUCT_CATEGORIES.map((category) => (
+                        <option key={category.value} value={category.value}>
+                          {category.label}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
 
                 <Field label="Data acquisto">
                   <input
