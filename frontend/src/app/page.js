@@ -28,6 +28,15 @@ const [editingUserId, setEditingUserId] = useState(null);
 const [editingDeviceId, setEditingDeviceId] = useState(null);
   const [offers, setOffers] = useState([]);
   const [editingOfferId, setEditingOfferId] = useState(null);
+const [clickStats, setClickStats] = useState({
+  summary: {
+    total_clicks: 0,
+    clicks_24h: 0,
+    clicks_7d: 0,
+  },
+  topProducts: [],
+  recentClicks: [],
+});
 const [amazonSearch, setAmazonSearch] = useState("");
 const [amazonResults, setAmazonResults] = useState([]);
 
@@ -165,6 +174,17 @@ const expiringDevices = devices.filter((d) => {
 
           const offersRes = await fetch(`${API_URL}/api/offers`);
           const offersData = await offersRes.json();
+
+          try {
+            const statsRes = await fetch(`${API_URL}/api/stats/clicks`);
+            const statsData = await statsRes.json();
+
+            if (statsData.success) {
+              setClickStats(statsData);
+            }
+          } catch (statsErr) {
+            console.error("Errore statistiche click", statsErr);
+          }
 
           setUsers(usersData);
           setDevices(devicesData);
@@ -610,6 +630,127 @@ function openCustomerApp(user) {
           <h3>Garanzie 90gg</h3>
           <h1>{expiring90}</h1>
         </div>
+
+        <div
+          style={{
+            border: "1px solid #ccc",
+            padding: "20px",
+            minWidth: "200px",
+            borderRadius: "8px",
+            background: "#f8fafc",
+          }}
+        >
+          <h3>Click Totali</h3>
+          <h1>{clickStats.summary?.total_clicks || 0}</h1>
+        </div>
+
+        <div
+          style={{
+            border: "1px solid #ccc",
+            padding: "20px",
+            minWidth: "200px",
+            borderRadius: "8px",
+            background: "#f8fafc",
+          }}
+        >
+          <h3>Click 24h</h3>
+          <h1>{clickStats.summary?.clicks_24h || 0}</h1>
+        </div>
+      </div>
+
+      <hr />
+
+      <h2>Statistiche Click Offerte</h2>
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit,minmax(320px,1fr))",
+          gap: "20px",
+          marginBottom: "25px",
+        }}
+      >
+        <section
+          style={{
+            border: "1px solid #ddd",
+            borderRadius: "8px",
+            padding: "15px",
+          }}
+        >
+          <h3 style={{ marginTop: 0 }}>Prodotti più cliccati</h3>
+
+          <table
+            border="1"
+            cellPadding="5"
+            style={{ width: "100%" }}
+          >
+            <thead>
+              <tr>
+                <th>Click</th>
+                <th>Prodotto</th>
+              </tr>
+            </thead>
+            <tbody>
+              {clickStats.topProducts?.length === 0 ? (
+                <tr>
+                  <td colSpan="2">Nessun click registrato.</td>
+                </tr>
+              ) : (
+                clickStats.topProducts.map((item, index) => (
+                  <tr key={item.asin || item.titolo || index}>
+                    <td>{item.clicks}</td>
+                    <td>{item.titolo}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </section>
+
+        <section
+          style={{
+            border: "1px solid #ddd",
+            borderRadius: "8px",
+            padding: "15px",
+          }}
+        >
+          <h3 style={{ marginTop: 0 }}>Ultimi click</h3>
+
+          <table
+            border="1"
+            cellPadding="5"
+            style={{ width: "100%" }}
+          >
+            <thead>
+              <tr>
+                <th>Ora</th>
+                <th>Cliente</th>
+                <th>Fonte</th>
+              </tr>
+            </thead>
+            <tbody>
+              {clickStats.recentClicks?.length === 0 ? (
+                <tr>
+                  <td colSpan="3">Nessun click recente.</td>
+                </tr>
+              ) : (
+                clickStats.recentClicks.map((click, index) => (
+                  <tr key={`${click.created_at}-${index}`}>
+                    <td>
+                      {new Date(click.created_at).toLocaleString("it-IT")}
+                    </td>
+                    <td>
+                      {click.customer_code
+                        ? `${click.customer_code} - ${click.nome || ""} ${click.cognome || ""}`
+                        : "Cliente non disponibile"}
+                    </td>
+                    <td>{click.source || "webapp"}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </section>
       </div>
 
       <hr />

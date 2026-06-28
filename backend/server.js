@@ -488,6 +488,73 @@ app.post("/api/app/:token/click", async (req, res) => {
   }
 });
 
+
+/*
+|--------------------------------------------------------------------------
+| ADMIN - CLICK STATS
+|--------------------------------------------------------------------------
+*/
+
+app.get("/api/stats/clicks", async (req, res) => {
+  try {
+    const summaryResult = await pool.query(`
+      SELECT
+        COUNT(*)::int AS total_clicks,
+        COUNT(*) FILTER (
+          WHERE created_at >= NOW() - INTERVAL '24 hours'
+        )::int AS clicks_24h,
+        COUNT(*) FILTER (
+          WHERE created_at >= NOW() - INTERVAL '7 days'
+        )::int AS clicks_7d
+      FROM offer_clicks
+    `);
+
+    const topProductsResult = await pool.query(`
+      SELECT
+        COALESCE(asin, '') AS asin,
+        COALESCE(NULLIF(titolo, ''), 'Prodotto senza titolo') AS titolo,
+        COUNT(*)::int AS clicks,
+        MAX(created_at) AS last_click
+      FROM offer_clicks
+      GROUP BY asin, titolo
+      ORDER BY clicks DESC, last_click DESC
+      LIMIT 10
+    `);
+
+    const recentClicksResult = await pool.query(`
+      SELECT
+        oc.created_at,
+        oc.asin,
+        oc.titolo,
+        oc.source,
+        u.customer_code,
+        u.nome,
+        u.cognome
+      FROM offer_clicks oc
+      LEFT JOIN users u
+        ON oc.user_id = u.id
+      ORDER BY oc.created_at DESC
+      LIMIT 10
+    `);
+
+    res.json({
+      success: true,
+      summary: summaryResult.rows[0] || {
+        total_clicks: 0,
+        clicks_24h: 0,
+        clicks_7d: 0
+      },
+      topProducts: topProductsResult.rows,
+      recentClicks: recentClicksResult.rows
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      error: err.message
+    });
+  }
+});
+
 /*
 |--------------------------------------------------------------------------
 | DEVICES
