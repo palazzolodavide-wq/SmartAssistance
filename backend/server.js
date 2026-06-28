@@ -1,4 +1,4 @@
-﻿const express = require("express");
+const express = require("express");
 const cors = require("cors");
 const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
@@ -125,7 +125,8 @@ app.get("/api/users", async (req, res) => {
         cognome,
         email,
         telefono,
-        role
+        role,
+        app_token
       FROM users
       ORDER BY created_at DESC
     `);

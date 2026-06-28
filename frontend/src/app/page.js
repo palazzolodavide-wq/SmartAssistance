@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useState } from "react";
 
@@ -206,11 +206,16 @@ const expiringDevices = devices.filter((d) => {
       return;
     }
 
-    alert(
-      isEdit
-        ? "Cliente aggiornato"
-        : "Cliente creato"
-    );
+    if (!isEdit && data.user?.app_token) {
+      const appUrl = getCustomerAppUrl(data.user);
+      alert(`Cliente creato. Link WebApp:\n${appUrl}`);
+    } else {
+      alert(
+        isEdit
+          ? "Cliente aggiornato"
+          : "Cliente creato"
+      );
+    }
 
     setEditingUserId(null);
 
@@ -485,6 +490,47 @@ async function importAmazonProduct(item) {
 
   }
 }
+
+
+function getCustomerAppUrl(user) {
+  if (!user?.app_token) {
+    return "";
+  }
+
+  if (typeof window === "undefined") {
+    return `/app/${user.app_token}`;
+  }
+
+  return `${window.location.origin}/app/${user.app_token}`;
+}
+
+async function copyCustomerAppUrl(user) {
+  const url = getCustomerAppUrl(user);
+
+  if (!url) {
+    alert("Token WebApp non disponibile per questo cliente");
+    return;
+  }
+
+  try {
+    await navigator.clipboard.writeText(url);
+    alert("Link WebApp copiato");
+  } catch (err) {
+    prompt("Copia il link WebApp", url);
+  }
+}
+
+function openCustomerApp(user) {
+  const url = getCustomerAppUrl(user);
+
+  if (!url) {
+    alert("Token WebApp non disponibile per questo cliente");
+    return;
+  }
+
+  window.open(url, "_blank");
+}
+
 
 
   return (
@@ -1091,7 +1137,7 @@ async function importAmazonProduct(item) {
 
     <hr />
 
-<h2>Clienti Registrati TEST123</h2>
+<h2>Clienti Registrati</h2>
 
 <input
   type="text"
@@ -1107,6 +1153,7 @@ async function importAmazonProduct(item) {
       <th>Nome</th>
       <th>Email</th>
       <th>Telefono</th>
+      <th>WebApp</th>
       <th>Azione</th>
     </tr>
   </thead>
@@ -1129,6 +1176,30 @@ async function importAmazonProduct(item) {
           <td>{u.nome} {u.cognome}</td>
           <td>{u.email}</td>
           <td>{u.telefono}</td>
+          <td>
+            {u.app_token ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => openCustomerApp(u)}
+                >
+                  Apri
+                </button>
+
+                <button
+                  type="button"
+                  style={{ marginLeft: "8px" }}
+                  onClick={() => copyCustomerAppUrl(u)}
+                >
+                  Copia
+                </button>
+              </>
+            ) : (
+              <span style={{ color: "#999" }}>
+                Token assente
+              </span>
+            )}
+          </td>
 <td>
   <button
     onClick={() => {
