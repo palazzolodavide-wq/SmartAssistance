@@ -73,7 +73,34 @@ export default function CustomerPage() {
 
   function openAffiliateLink(url) {
     if (!url) return;
-    window.location.href = url;
+
+    const isAndroid = /Android/i.test(navigator.userAgent);
+    const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+    const isAmazon =
+      url.includes("amazon.") ||
+      url.includes("amzn.");
+
+    if (isAndroid && isAmazon) {
+      try {
+        const parsedUrl = new URL(url);
+        const intentUrl =
+          `intent://${parsedUrl.host}${parsedUrl.pathname}${parsedUrl.search}` +
+          "#Intent;scheme=https;package=com.amazon.mShop.android.shopping;end";
+
+        window.location.href = intentUrl;
+        return;
+      } catch (err) {
+        window.location.href = url;
+        return;
+      }
+    }
+
+    if (isIOS || isAndroid) {
+      window.location.href = url;
+      return;
+    }
+
+    window.open(url, "_blank");
   }
 
   function openWhatsApp() {
