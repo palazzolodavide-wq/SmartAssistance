@@ -98,6 +98,7 @@ export default function Home() {
   const [receiptUploadModal, setReceiptUploadModal] = useState(null);
   const [whatsAppModalUser, setWhatsAppModalUser] = useState(null);
   const [whatsAppMessage, setWhatsAppMessage] = useState("");
+  const [customerDeviceMode, setCustomerDeviceMode] = useState("new");
   const [newCustomerReceiptQrAfterSave, setNewCustomerReceiptQrAfterSave] = useState(false);
   const [deviceReceiptQrAfterSave, setDeviceReceiptQrAfterSave] = useState(false);
 
@@ -413,6 +414,7 @@ export default function Home() {
     });
 
     setDeviceReceiptQrAfterSave(false);
+    setCustomerDeviceMode("new");
     setActiveSection("customers");
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
@@ -423,6 +425,7 @@ export default function Home() {
       ...EMPTY_DEVICE_FORM,
       user_id: user.id,
     });
+    setCustomerDeviceMode("device");
     setActiveSection("customers");
     setTimeout(() => {
       const el = document.getElementById("existing-device-form");
@@ -520,6 +523,7 @@ export default function Home() {
     });
 
     setDeviceReceiptQrAfterSave(false);
+    setCustomerDeviceMode("device");
     setActiveSection("customers");
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
@@ -1566,6 +1570,37 @@ export default function Home() {
           margin-top: 2px;
         }
 
+        .mode-tabs {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 10px;
+          margin-bottom: 14px;
+        }
+
+        .mode-button {
+          border: 1px solid #dbe4ef;
+          border-radius: 16px;
+          padding: 13px 14px;
+          background: #fff;
+          color: #334155;
+          font-weight: 900;
+          cursor: pointer;
+          box-shadow: 0 8px 20px rgba(15,23,42,.05);
+        }
+
+        .mode-button.active {
+          background: #2563eb;
+          color: #fff;
+          border-color: #2563eb;
+        }
+
+        .mode-help {
+          margin: -2px 0 14px;
+          color: #64748b;
+          font-size: 13px;
+          line-height: 1.45;
+        }
+
         .mobile-nav {
           display: none;
         }
@@ -1795,7 +1830,38 @@ export default function Home() {
         {!loading && activeSection === "customers" && (
           <section className="section-grid">
             <div>
-              <div className="panel">
+              <div className="mode-tabs">
+                <button
+                  type="button"
+                  className={`mode-button ${customerDeviceMode === "new" ? "active" : ""}`}
+                  onClick={() => {
+                    setCustomerDeviceMode("new");
+                    setEditingDeviceId(null);
+                    setDeviceForm(EMPTY_DEVICE_FORM);
+                    setDeviceReceiptQrAfterSave(false);
+                  }}
+                >
+                  Nuovo cliente
+                </button>
+
+                <button
+                  type="button"
+                  className={`mode-button ${customerDeviceMode === "device" ? "active" : ""}`}
+                  onClick={() => {
+                    setCustomerDeviceMode("device");
+                    setEditingUserId(null);
+                    setUserForm(EMPTY_USER_FORM);
+                  }}
+                >
+                  Device esistente
+                </button>
+              </div>
+
+              <div className="mode-help">
+                Usa "Nuovo cliente" solo per prima registrazione. Usa "Device esistente" quando il cliente è già presente.
+              </div>
+
+              <div className="panel" style={{ display: customerDeviceMode === "new" || editingUserId ? "block" : "none" }}>
                 <div className="panel-header">
                   <div>
                     <h2 className="panel-title">
@@ -1954,7 +2020,7 @@ export default function Home() {
                 </form>
               </div>
 
-              <div className="panel" id="existing-device-form">
+              <div className="panel" id="existing-device-form" style={{ display: customerDeviceMode === "device" || editingDeviceId ? "block" : "none" }}>
                 <div className="panel-header">
                   <div>
                     <h2 className="panel-title">
@@ -2140,15 +2206,14 @@ export default function Home() {
                       <tr>
                         <th>Cliente</th>
                         <th>Contatti</th>
-                        <th>WebApp</th>
-                        <th>Onboarding</th>
+                        <th>WebApp e contatto</th>
                         <th>Azioni</th>
                       </tr>
                     </thead>
                     <tbody>
                       {filteredUsers.length === 0 ? (
                         <tr>
-                          <td colSpan="5">Nessun cliente trovato.</td>
+                          <td colSpan="4">Nessun cliente trovato.</td>
                         </tr>
                       ) : (
                         filteredUsers.map((user) => (
@@ -2167,36 +2232,33 @@ export default function Home() {
                             </td>
                             <td>
                               {user.app_token ? (
-                                <div className="action-row">
-                                  <button type="button" className="small-button" onClick={() => openCustomerApp(user)}>
-                                    Apri
-                                  </button>
-                                  <button type="button" className="small-button" onClick={() => copyCustomerAppUrl(user)}>
-                                    Copia
-                                  </button>
-                                </div>
+                                <>
+                                  <div className="action-row">
+                                    <button type="button" className="small-button" onClick={() => openCustomerApp(user)}>
+                                      Apri
+                                    </button>
+                                    <button type="button" className="small-button" onClick={() => copyCustomerAppUrl(user)}>
+                                      Copia link
+                                    </button>
+                                    <button type="button" className="small-button" onClick={() => openCustomerQr(user)}>
+                                      QR
+                                    </button>
+                                  </div>
+
+                                  <div className="action-row" style={{ marginTop: "8px" }}>
+                                    <button type="button" className="small-button" onClick={() => openCustomerWhatsApp(user)}>
+                                      WhatsApp
+                                    </button>
+                                    <button type="button" className="small-button" onClick={() => openCustomWhatsAppModal(user)}>
+                                      Msg libero
+                                    </button>
+                                    <button type="button" className="small-button" onClick={() => copyCustomerOnboardingMessage(user)}>
+                                      Copia msg
+                                    </button>
+                                  </div>
+                                </>
                               ) : (
                                 <span className="badge badge-red">Token assente</span>
-                              )}
-                            </td>
-                            <td>
-                              {user.app_token ? (
-                                <div className="action-row">
-                                  <button type="button" className="small-button" onClick={() => copyCustomerOnboardingMessage(user)}>
-                                    Copia msg
-                                  </button>
-                                  <button type="button" className="small-button" onClick={() => openCustomerWhatsApp(user)}>
-                                    WhatsApp
-                                  </button>
-                                  <button type="button" className="small-button" onClick={() => openCustomWhatsAppModal(user)}>
-                                    Msg libero
-                                  </button>
-                                  <button type="button" className="small-button" onClick={() => openCustomerQr(user)}>
-                                    QR
-                                  </button>
-                                </div>
-                              ) : (
-                                <span className="row-subtitle">Non disponibile</span>
                               )}
                             </td>
                             <td>
@@ -2223,9 +2285,9 @@ export default function Home() {
               <div className="panel">
                 <div className="toolbar">
                   <div>
-                    <h2 className="panel-title">Dispositivi associati</h2>
+                    <h2 className="panel-title">Archivio dispositivi</h2>
                     <div className="panel-subtitle">
-                      {filteredDevices.length} dispositivi visualizzati.
+                      Consultazione rapida: {filteredDevices.length} dispositivi.
                     </div>
                   </div>
 
