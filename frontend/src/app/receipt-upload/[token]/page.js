@@ -13,6 +13,8 @@ export default function ReceiptUploadPage() {
   const [file, setFile] = useState(null);
   const [previewUrl, setPreviewUrl] = useState("");
   const [dataUrl, setDataUrl] = useState("");
+  const [scannerEnabled, setScannerEnabled] = useState(true);
+  const [scannerApplied, setScannerApplied] = useState(false);
   const [status, setStatus] = useState("loading");
   const [message, setMessage] = useState("");
   const [uploading, setUploading] = useState(false);
@@ -54,6 +56,106 @@ export default function ReceiptUploadPage() {
     });
   }
 
+  function loadImageFromDataUrl(imageDataUrl) {
+    return new Promise((resolve, reject) => {
+      const image = new Image();
+
+      image.onload = () => resolve(image);
+      image.onerror = () => reject(new Error("Impossibile elaborare l'immagine"));
+
+      image.src = imageDataUrl;
+    });
+  }
+
+  function getPercentileFromHistogram(histogram, totalPixels, percentile) {
+    const target = totalPixels * percentile;
+    let sum = 0;
+
+    for (let i = 0; i < histogram.length; i += 1) {
+      sum += histogram[i];
+
+      if (sum >= target) {
+        return i;
+      }
+    }
+
+    return 255;
+  }
+
+  async function applyScannerEffect(selectedFile) {
+    const originalDataUrl = await readFileAsDataUrl(selectedFile);
+    const image = await loadImageFromDataUrl(originalDataUrl);
+
+    const maxSide = 1800;
+    const scale = Math.min(1, maxSide / Math.max(image.width, image.height));
+    const width = Math.max(1, Math.round(image.width * scale));
+    const height = Math.max(1, Math.round(image.height * scale));
+
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+
+    const ctx = canvas.getContext("2d", {
+      willReadFrequently: true,
+    });
+
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, width, height);
+    ctx.drawImage(image, 0, 0, width, height);
+
+    const imageData = ctx.getImageData(0, 0, width, height);
+    const pixels = imageData.data;
+    const histogram = new Array(256).fill(0);
+    const grayValues = new Uint8Array(width * height);
+
+    for (let i = 0, p = 0; i < pixels.length; i += 4, p += 1) {
+      const gray = Math.round(
+        pixels[i] * 0.299 +
+        pixels[i + 1] * 0.587 +
+        pixels[i + 2] * 0.114
+      );
+
+      grayValues[p] = gray;
+      histogram[gray] += 1;
+    }
+
+    const totalPixels = width * height;
+    const low = getPercentileFromHistogram(histogram, totalPixels, 0.05);
+    const high = Math.max(low + 24, getPercentileFromHistogram(histogram, totalPixels, 0.96));
+
+    for (let i = 0, p = 0; i < pixels.length; i += 4, p += 1) {
+      let clean = ((grayValues[p] - low) / (high - low)) * 255;
+
+      clean = ((clean - 128) * 1.55) + 128 + 18;
+      clean = Math.max(0, Math.min(255, clean));
+
+      if (clean > 218) {
+        clean = 255;
+      } else if (clean < 38) {
+        clean = 0;
+      }
+
+      pixels[i] = clean;
+      pixels[i + 1] = clean;
+      pixels[i + 2] = clean;
+      pixels[i + 3] = 255;
+    }
+
+    ctx.putImageData(imageData, 0, 0);
+
+    return canvas.toDataURL("image/jpeg", 0.88);
+  }
+
+  function buildScannedFilename(originalName) {
+    const baseName = (originalName || "scontrino")
+      .replace(/\.[^/.]+$/, "")
+      .replace(/[^\w\-]+/g, "-")
+      .replace(/-+/g, "-")
+      .replace(/^-|-$/g, "");
+
+    return `${baseName || "scontrino"}-scanner.jpg`;
+  }
+
   async function handleFileChange(event) {
     const selectedFile = event.target.files?.[0];
 
@@ -79,12 +181,27 @@ export default function ReceiptUploadPage() {
     }
 
     try {
+      setMessage("");
+      setScannerApplied(false);
+
+      if (scannerEnabled && selectedFile.type.startsWith("image/")) {
+        const scannedDataUrl = await applyScannerEffect(selectedFile);
+
+        setFile({
+          name: buildScannedFilename(selectedFile.name),
+          type: "image/jpeg",
+        });
+        setDataUrl(scannedDataUrl);
+        setPreviewUrl(scannedDataUrl);
+        setScannerApplied(true);
+        return;
+      }
+
       const result = await readFileAsDataUrl(selectedFile);
 
       setFile(selectedFile);
       setDataUrl(result);
       setPreviewUrl(selectedFile.type === "application/pdf" ? "" : result);
-      setMessage("");
     } catch (err) {
       setMessage(err.message);
     }
@@ -270,6 +387,38 @@ export default function ReceiptUploadPage() {
         </section>
 
         <section style={styles.card}>
+          <label
+            style={{
+              display: "flex",
+              gap: "10px",
+              alignItems: "flex-start",
+              background: "rgba(255,255,255,.06)",
+              border: "1px solid rgba(255,255,255,.10)",
+              borderRadius: "16px",
+              padding: "14px",
+              marginBottom: "14px",
+              cursor: "pointer",
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={scannerEnabled}
+              onChange={(e) => setScannerEnabled(e.target.checked)}
+              style={{
+                width: "20px",
+                height: "20px",
+                marginTop: "2px",
+              }}
+            />
+            <span>
+              <strong>Effetto scanner automatico</strong>
+              <br />
+              <span style={{ color: "#cbd5e1", fontSize: "13px", lineHeight: 1.45 }}>
+                Migliora contrasto, bianco e nero, leggibilità e peso del file.
+              </span>
+            </span>
+          </label>
+
           <label style={styles.secondaryButton}>
             📷 Scatta foto scontrino
             <input
@@ -298,6 +447,19 @@ export default function ReceiptUploadPage() {
               <div style={{ color: "#cbd5e1", fontSize: "14px" }}>
                 File selezionato: <strong>{file.name}</strong>
               </div>
+
+              {scannerApplied && (
+                <div
+                  style={{
+                    color: "#86efac",
+                    fontSize: "14px",
+                    marginTop: "8px",
+                    lineHeight: 1.45,
+                  }}
+                >
+                  Effetto scanner applicato automaticamente.
+                </div>
+              )}
 
               {previewUrl ? (
                 <img src={previewUrl} alt="Anteprima scontrino" style={styles.preview} />
@@ -334,7 +496,7 @@ export default function ReceiptUploadPage() {
           <h3 style={{ marginTop: 0 }}>Consiglio foto</h3>
           <p style={styles.muted}>
             Appoggia lo scontrino su una superficie scura, tieni il telefono parallelo e fotografa tutto il documento.
-            L'effetto scanner automatico verrà aggiunto nello step successivo.
+L'effetto scanner automatico è già attivo per le foto e migliora contrasto, bianco e leggibilità.
           </p>
         </section>
       </div>
