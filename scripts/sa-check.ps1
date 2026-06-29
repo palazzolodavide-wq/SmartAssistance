@@ -27,7 +27,7 @@ function Write-Ko {
 }
 
 Write-Host ""
-Write-Host "Smart Assistance - Check operativo REV2" -ForegroundColor White
+Write-Host "Smart Assistance - Check operativo REV2.1" -ForegroundColor White
 Write-Host ("Data: " + (Get-Date -Format "yyyy-MM-dd HH:mm:ss")) -ForegroundColor DarkGray
 
 Write-Section "Docker containers"
@@ -105,18 +105,25 @@ SELECT 'offer_clicks', COUNT(*) FROM offer_clicks;
   Write-Ko "Query database KO: $($_.Exception.Message)"
 }
 
-Write-Section "Statistiche API"
+Write-Section "Statistiche click database"
 try {
-  $stats = Invoke-RestMethod http://localhost:3006/api/stats/clicks -TimeoutSec 10
+  $dbUser = ((docker exec sa-postgres printenv POSTGRES_USER) -join "").Trim()
+  $dbName = ((docker exec sa-postgres printenv POSTGRES_DB) -join "").Trim()
 
-  if ($stats.success) {
-    $stats.summary | Format-List
-    Write-Ok "Statistiche API OK"
-  } else {
-    Write-Warn "Statistiche API risposta non success"
-  }
+  $statsQuery = @"
+SELECT
+  COUNT(*) AS click_totali,
+  COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '24 hours') AS click_24h,
+  COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '7 days') AS click_7_giorni,
+  COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '30 days') AS click_30_giorni,
+  COUNT(DISTINCT user_id) FILTER (WHERE user_id IS NOT NULL AND created_at >= NOW() - INTERVAL '7 days') AS clienti_7_giorni
+FROM offer_clicks;
+"@
+
+  $statsQuery | docker exec -i sa-postgres psql -U $dbUser -d $dbName
+  Write-Ok "Statistiche click lette da database"
 } catch {
-  Write-Warn "Statistiche API KO: $($_.Exception.Message)"
+  Write-Warn "Statistiche click database KO: $($_.Exception.Message)"
 }
 
 Write-Section "Backup recenti"
