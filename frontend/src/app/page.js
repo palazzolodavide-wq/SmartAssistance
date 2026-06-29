@@ -96,6 +96,8 @@ export default function Home() {
 
   const [qrModalUser, setQrModalUser] = useState(null);
   const [receiptUploadModal, setReceiptUploadModal] = useState(null);
+  const [whatsAppModalUser, setWhatsAppModalUser] = useState(null);
+  const [whatsAppMessage, setWhatsAppMessage] = useState("");
   const [newCustomerReceiptQrAfterSave, setNewCustomerReceiptQrAfterSave] = useState(false);
   const [deviceReceiptQrAfterSave, setDeviceReceiptQrAfterSave] = useState(false);
 
@@ -714,7 +716,27 @@ export default function Home() {
   }
 
   function getCustomerPhone(user) {
-    return (user?.telefono || "").replace(/\D/g, "");
+    const raw = (user?.telefono || "").replace(/\D/g, "");
+
+    if (raw.startsWith("0039")) {
+      return raw.substring(4);
+    }
+
+    if (raw.startsWith("39")) {
+      return raw.substring(2);
+    }
+
+    return raw;
+  }
+
+  function getWhatsAppPhone(user) {
+    const phone = getCustomerPhone(user);
+
+    if (!phone) {
+      return "";
+    }
+
+    return `39${phone}`;
   }
 
   function getCustomerOnboardingMessage(user) {
@@ -726,6 +748,25 @@ export default function Home() {
       `${url}\n\n` +
       "Da qui puoi vedere garanzia, assistenza e accessori consigliati per il tuo dispositivo."
     );
+  }
+
+  function getWhatsAppTemplate(type, user) {
+    const nome = user?.nome || "cliente";
+    const appUrl = getCustomerAppUrl(user);
+
+    if (type === "promo") {
+      return `Ciao ${nome}, abbiamo aggiornato le offerte consigliate nella tua WebApp Smart Assistance. Puoi vederle qui:\n\n${appUrl}`;
+    }
+
+    if (type === "assistenza") {
+      return `Ciao ${nome}, ti scriviamo da Smart Assistance. Se hai bisogno di supporto per il tuo dispositivo puoi rispondere direttamente a questo messaggio.`;
+    }
+
+    if (type === "scontrino") {
+      return `Ciao ${nome}, abbiamo caricato lo scontrino del tuo acquisto nella tua WebApp Smart Assistance. Lo trovi nella sezione del tuo dispositivo:\n\n${appUrl}`;
+    }
+
+    return getCustomerOnboardingMessage(user);
   }
 
   async function copyCustomerOnboardingMessage(user) {
@@ -740,7 +781,7 @@ export default function Home() {
   }
 
   function openCustomerWhatsApp(user) {
-    const phone = getCustomerPhone(user);
+    const phone = getWhatsAppPhone(user);
     const message = encodeURIComponent(getCustomerOnboardingMessage(user));
 
     if (!phone) {
@@ -748,7 +789,49 @@ export default function Home() {
       return;
     }
 
-    window.open(`https://wa.me/39${phone.replace(/^39/, "")}?text=${message}`, "_blank");
+    window.open(`https://wa.me/${phone}?text=${message}`, "_blank");
+  }
+
+  function openCustomWhatsAppModal(user) {
+    const phone = getWhatsAppPhone(user);
+
+    if (!phone) {
+      alert("Telefono cliente non disponibile");
+      return;
+    }
+
+    setWhatsAppModalUser(user);
+    setWhatsAppMessage("");
+  }
+
+  function sendCustomWhatsApp() {
+    const phone = getWhatsAppPhone(whatsAppModalUser);
+
+    if (!phone) {
+      alert("Telefono cliente non disponibile");
+      return;
+    }
+
+    if (!whatsAppMessage.trim()) {
+      alert("Scrivi un messaggio prima di inviare");
+      return;
+    }
+
+    window.open(`https://wa.me/${phone}?text=${encodeURIComponent(whatsAppMessage.trim())}`, "_blank");
+  }
+
+  async function copyCustomWhatsAppMessage() {
+    if (!whatsAppMessage.trim()) {
+      alert("Messaggio vuoto");
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(whatsAppMessage.trim());
+      alert("Messaggio copiato");
+    } catch (err) {
+      prompt("Copia il messaggio", whatsAppMessage.trim());
+    }
   }
 
   function getCustomerQrImageUrl(user) {
@@ -2105,6 +2188,9 @@ export default function Home() {
                                   <button type="button" className="small-button" onClick={() => openCustomerWhatsApp(user)}>
                                     WhatsApp
                                   </button>
+                                  <button type="button" className="small-button" onClick={() => openCustomWhatsAppModal(user)}>
+                                    Msg libero
+                                  </button>
                                   <button type="button" className="small-button" onClick={() => openCustomerQr(user)}>
                                     QR
                                   </button>
@@ -2748,6 +2834,70 @@ export default function Home() {
                 <button type="button" className="primary-button" onClick={() => openCustomerApp(qrModalUser)}>
                   Apri WebApp
                 </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {whatsAppModalUser && (
+          <div className="qr-backdrop" onClick={() => setWhatsAppModalUser(null)}>
+            <div className="qr-modal" onClick={(e) => e.stopPropagation()}>
+              <div className="panel-header">
+                <div>
+                  <h2 className="panel-title">WhatsApp personalizzato</h2>
+                  <div className="panel-subtitle">
+                    {whatsAppModalUser.nome} {whatsAppModalUser.cognome} · {whatsAppModalUser.telefono || "telefono non disponibile"}
+                  </div>
+                </div>
+
+                <button type="button" className="ghost-button" onClick={() => setWhatsAppModalUser(null)}>
+                  Chiudi
+                </button>
+              </div>
+
+              <div className="inline-info-box" style={{ marginTop: "14px" }}>
+                <div className="row-title">Template rapidi</div>
+                <div className="action-row">
+                  <button type="button" className="small-button" onClick={() => setWhatsAppMessage(getWhatsAppTemplate("welcome", whatsAppModalUser))}>
+                    Benvenuto
+                  </button>
+                  <button type="button" className="small-button" onClick={() => setWhatsAppMessage(getWhatsAppTemplate("promo", whatsAppModalUser))}>
+                    Promo
+                  </button>
+                  <button type="button" className="small-button" onClick={() => setWhatsAppMessage(getWhatsAppTemplate("assistenza", whatsAppModalUser))}>
+                    Assistenza
+                  </button>
+                  <button type="button" className="small-button" onClick={() => setWhatsAppMessage(getWhatsAppTemplate("scontrino", whatsAppModalUser))}>
+                    Scontrino
+                  </button>
+                </div>
+              </div>
+
+              <Field label="Messaggio">
+                <textarea
+                  value={whatsAppMessage}
+                  onChange={(e) => setWhatsAppMessage(e.target.value)}
+                  placeholder="Scrivi qui il messaggio WhatsApp per il cliente..."
+                  style={{ minHeight: "180px", marginTop: "12px" }}
+                />
+              </Field>
+
+              <div className="form-actions" style={{ marginTop: "14px" }}>
+                <button type="button" className="primary-button" onClick={sendCustomWhatsApp}>
+                  Apri WhatsApp
+                </button>
+
+                <button type="button" className="soft-button" onClick={copyCustomWhatsAppMessage}>
+                  Copia testo
+                </button>
+
+                <button type="button" className="ghost-button" onClick={() => setWhatsAppMessage("")}>
+                  Pulisci
+                </button>
+              </div>
+
+              <div className="panel-subtitle" style={{ marginTop: "14px", lineHeight: 1.5 }}>
+                Il messaggio viene aperto in WhatsApp Web/App già compilato. L'invio finale resta manuale, così puoi controllarlo prima di mandarlo.
               </div>
             </div>
           </div>
