@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 
 const WHATSAPP_NUMBER = "393297655557";
-const LAVIALATTEA_FLYER_URL = "https://www.lavialattea.it/volantino/";
 
 export default function CustomerPage() {
   const params = useParams();
@@ -23,10 +22,6 @@ export default function CustomerPage() {
   const [error, setError] = useState("");
   const [installPrompt, setInstallPrompt] = useState(null);
   const [isInstalled, setIsInstalled] = useState(false);
-  const [flyerLoading, setFlyerLoading] = useState(true);
-  const [flyerPages, setFlyerPages] = useState([]);
-  const [flyerPageIndex, setFlyerPageIndex] = useState(0);
-  const [flyerZoom, setFlyerZoom] = useState(100);
 
   useEffect(() => {
     async function load() {
@@ -122,28 +117,7 @@ export default function CustomerPage() {
     };
   }, [token]);
 
-  useEffect(() => {
-    async function loadFlyerPages() {
-      try {
-        setFlyerLoading(true);
 
-        const res = await fetch("/api/flyer/lavialattea/pages");
-        const json = await res.json();
-
-        if (json.success && Array.isArray(json.pages)) {
-          setFlyerPages(json.pages);
-          setFlyerPageIndex(0);
-          setFlyerZoom(100);
-        }
-      } catch (err) {
-        setFlyerPages([]);
-      } finally {
-        setFlyerLoading(false);
-      }
-    }
-
-    loadFlyerPages();
-  }, []);
 
   const customerName = `${data.customer?.nome || ""} ${data.customer?.cognome || ""}`.trim();
   const deviceName = `${data.device?.marca || ""} ${data.device?.modello || ""}`.trim();
@@ -234,23 +208,6 @@ export default function CustomerPage() {
     }
 
     window.open(url, "_blank");
-  }
-
-  function trackLaViaLatteaFlyer(source = "lavialattea_volantino") {
-    trackOfferClick(
-      {
-        asin: source,
-        titolo: "Volantino La Via Lattea Euronics",
-        affiliate_url: "/api/flyer/lavialattea/pages",
-      },
-      source
-    );
-  }
-
-  function openLaViaLatteaFlyer() {
-    trackLaViaLatteaFlyer("lavialattea_volantino_embed");
-    setTab("flyer");
-    window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   function openWhatsApp() {
@@ -399,16 +356,6 @@ export default function CustomerPage() {
       marginBottom: "16px",
       boxShadow: "0 10px 28px rgba(0,0,0,.22)",
     },
-    smallControlButton: {
-      border: "1px solid rgba(255,255,255,.18)",
-      borderRadius: "14px",
-      padding: "11px 10px",
-      background: "rgba(255,255,255,.08)",
-      color: "white",
-      fontWeight: "bold",
-      cursor: "pointer",
-      fontSize: "13px",
-    },
     lightCard: {
       background: "#f8fafc",
       color: "#0f172a",
@@ -499,203 +446,6 @@ export default function CustomerPage() {
         <div style={{ fontSize: "18px", marginBottom: "2px" }}>{icon}</div>
         {label}
       </button>
-    );
-  }
-
-  function LaViaLatteaFlyerCard({ compact = false }) {
-    return (
-      <section
-        style={{
-          ...styles.lightCard,
-          background: "linear-gradient(145deg,#ffffff,#fff7ed)",
-          border: "1px solid #fed7aa",
-        }}
-      >
-        <div
-          style={{
-            display: "inline-block",
-            background: "#ffedd5",
-            color: "#9a3412",
-            borderRadius: "999px",
-            padding: "6px 10px",
-            fontSize: "12px",
-            fontWeight: "bold",
-            marginBottom: "12px",
-          }}
-        >
-          Aggiornato dalla sede
-        </div>
-
-        <h2 style={{ margin: "0 0 8px", color: "#0f172a" }}>
-          📰 Volantino La Via Lattea Euronics
-        </h2>
-
-        <p
-          style={{
-            color: "#475569",
-            lineHeight: 1.5,
-            margin: "0 0 16px",
-            fontSize: "14px",
-          }}
-        >
-          {compact
-            ? "Il volantino ufficiale in corso, sempre aggiornato dalla sede."
-            : "Sfoglia il volantino in corso pubblicato dalla sede La Via Lattea. Qui trovi promozioni, offerte e prodotti disponibili nel circuito Euronics La Via Lattea."}
-        </p>
-
-        <button
-          type="button"
-          onClick={openLaViaLatteaFlyer}
-          style={{
-            ...styles.cta,
-            background: "#f97316",
-          }}
-        >
-          Sfoglia nella WebApp
-        </button>
-      </section>
-    );
-  }
-
-  function NativeFlyerViewer() {
-    const hasPages = flyerPages.length > 0;
-    const currentPage = hasPages ? flyerPages[Math.min(flyerPageIndex, flyerPages.length - 1)] : null;
-
-    function previousPage() {
-      setFlyerPageIndex((current) => Math.max(0, current - 1));
-      window.scrollTo({ top: 0, behavior: "smooth" });
-    }
-
-    function nextPage() {
-      setFlyerPageIndex((current) => Math.min(flyerPages.length - 1, current + 1));
-      window.scrollTo({ top: 0, behavior: "smooth" });
-    }
-
-    function zoomOut() {
-      setFlyerZoom((current) => Math.max(70, current - 15));
-    }
-
-    function zoomIn() {
-      setFlyerZoom((current) => Math.min(180, current + 15));
-    }
-
-    if (flyerLoading) {
-      return (
-        <section style={styles.card}>
-          Caricamento volantino...
-        </section>
-      );
-    }
-
-    if (!currentPage) {
-      return (
-        <section style={styles.card}>
-          Volantino non disponibile in questo momento.
-        </section>
-      );
-    }
-
-    return (
-      <section
-        style={{
-          ...styles.card,
-          padding: "12px",
-          overflow: "hidden",
-          borderRadius: "22px",
-        }}
-      >
-        <div
-          style={{
-            display: "grid",
-            gap: "10px",
-            marginBottom: "12px",
-          }}
-        >
-          <div>
-            <strong>Volantino La Via Lattea</strong>
-            <div style={{ color: "#cbd5e1", fontSize: "13px", marginTop: "4px" }}>
-              {flyerPages.length > 1
-                ? `Pagina ${flyerPageIndex + 1} di ${flyerPages.length}`
-                : "Volantino in pagina unica scorrevole"}
-            </div>
-          </div>
-
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "1fr auto 1fr",
-              gap: "8px",
-              alignItems: "center",
-            }}
-          >
-            <button
-              type="button"
-              onClick={previousPage}
-              disabled={flyerPageIndex === 0}
-              style={{
-                ...styles.smallControlButton,
-                opacity: flyerPageIndex === 0 ? 0.45 : 1,
-              }}
-            >
-              ← Prec.
-            </button>
-
-            <div style={{ color: "#cbd5e1", fontSize: "13px", fontWeight: "bold" }}>
-              {flyerZoom}%
-            </div>
-
-            <button
-              type="button"
-              onClick={nextPage}
-              disabled={flyerPageIndex >= flyerPages.length - 1}
-              style={{
-                ...styles.smallControlButton,
-                opacity: flyerPageIndex >= flyerPages.length - 1 ? 0.45 : 1,
-              }}
-            >
-              Succ. →
-            </button>
-          </div>
-
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "1fr 1fr",
-              gap: "8px",
-            }}
-          >
-            <button type="button" onClick={zoomOut} style={styles.smallControlButton}>
-              − Zoom
-            </button>
-            <button type="button" onClick={zoomIn} style={styles.smallControlButton}>
-              + Zoom
-            </button>
-          </div>
-        </div>
-
-        <div
-          style={{
-            width: "100%",
-            maxHeight: "70vh",
-            overflow: "auto",
-            background: "#ffffff",
-            borderRadius: "16px",
-            border: "1px solid rgba(255,255,255,.10)",
-          }}
-        >
-          <img
-            src={currentPage.image_url}
-            alt={`Pagina volantino ${flyerPageIndex + 1}`}
-            style={{
-              width: `${flyerZoom}%`,
-              maxWidth: "none",
-              height: "auto",
-              display: "block",
-              margin: "0 auto",
-            }}
-          />
-        </div>
-      </section>
     );
   }
 
