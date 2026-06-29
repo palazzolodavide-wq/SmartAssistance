@@ -27,6 +27,24 @@ const PRODUCT_CATEGORIES = [
   { value: "desktop", label: "Desktop" },
 ];
 
+const OFFER_CATEGORIES = [
+  { value: "accessori", label: "Accessori" },
+  { value: "smartphone", label: "Smartphone" },
+  { value: "notebook", label: "Notebook" },
+  { value: "desktop", label: "Desktop" },
+  { value: "casa", label: "Casa" },
+  { value: "gaming", label: "Gaming" },
+  { value: "audio", label: "Audio" },
+  { value: "generale", label: "Generale" },
+];
+
+const OFFER_PARTNERS = [
+  { value: "amazon", label: "Amazon" },
+  { value: "euronics", label: "Euronics" },
+  { value: "lavialattea", label: "La Via Lattea" },
+  { value: "altro", label: "Altro" },
+];
+
 const EMPTY_USER_FORM = {
   nome: "",
   cognome: "",
@@ -45,7 +63,7 @@ const EMPTY_DEVICE_FORM = {
 };
 
 const EMPTY_OFFER_FORM = {
-  categoria: "",
+  categoria: "accessori",
   partner: "amazon",
   titolo: "",
   descrizione: "",
@@ -567,11 +585,118 @@ export default function Home() {
     }
   }
 
+  function getOfferCategoryLabel(value) {
+    return OFFER_CATEGORIES.find((item) => item.value === value)?.label || value || "-";
+  }
+
+  function getOfferPartnerLabel(value) {
+    return OFFER_PARTNERS.find((item) => item.value === value)?.label || value || "-";
+  }
+
+  function normalizeOfferPayload(payload) {
+    return {
+      categoria: (payload.categoria || "accessori").trim(),
+      partner: (payload.partner || "amazon").trim(),
+      titolo: (payload.titolo || "").trim(),
+      descrizione: (payload.descrizione || "").trim(),
+      affiliate_url: (payload.affiliate_url || "").trim(),
+      image_url: (payload.image_url || "").trim(),
+    };
+  }
+
+  function validateOfferPayload(payload) {
+    if (!payload.titolo) {
+      return "Inserisci il titolo dell'offerta";
+    }
+
+    if (!payload.affiliate_url) {
+      return "Inserisci il link affiliato";
+    }
+
+    if (!/^https?:\/\//i.test(payload.affiliate_url)) {
+      return "Il link affiliato deve iniziare con http:// oppure https://";
+    }
+
+    if (payload.image_url && !/^https?:\/\//i.test(payload.image_url)) {
+      return "L'URL immagine deve iniziare con http:// oppure https://";
+    }
+
+    return "";
+  }
+
+  function openOfferLink(offer) {
+    const url = offer?.affiliate_url || offerForm.affiliate_url;
+
+    if (!url) {
+      alert("Link offerta non disponibile");
+      return;
+    }
+
+    window.open(url, "_blank");
+  }
+
+  async function copyOfferLink(offer) {
+    const url = offer?.affiliate_url || offerForm.affiliate_url;
+
+    if (!url) {
+      alert("Link offerta non disponibile");
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(url);
+      alert("Link offerta copiato");
+    } catch (err) {
+      prompt("Copia link offerta", url);
+    }
+  }
+
+  function fillOfferTemplate(type) {
+    if (type === "cover") {
+      setOfferForm({
+        ...offerForm,
+        categoria: "accessori",
+        partner: offerForm.partner || "amazon",
+        titolo: offerForm.titolo || "Cover protettiva consigliata",
+        descrizione: offerForm.descrizione || "Protegge il dispositivo da urti, graffi e cadute accidentali.",
+      });
+      return;
+    }
+
+    if (type === "vetro") {
+      setOfferForm({
+        ...offerForm,
+        categoria: "accessori",
+        partner: offerForm.partner || "amazon",
+        titolo: offerForm.titolo || "Vetro temperato consigliato",
+        descrizione: offerForm.descrizione || "Protezione schermo resistente e trasparente per uso quotidiano.",
+      });
+      return;
+    }
+
+    if (type === "caricatore") {
+      setOfferForm({
+        ...offerForm,
+        categoria: "accessori",
+        partner: offerForm.partner || "amazon",
+        titolo: offerForm.titolo || "Caricatore rapido consigliato",
+        descrizione: offerForm.descrizione || "Accessorio utile per ricarica veloce e sicura del dispositivo.",
+      });
+    }
+  }
+
   async function saveOffer(e) {
     e.preventDefault();
 
     try {
       const isEdit = editingOfferId !== null;
+      const payload = normalizeOfferPayload(offerForm);
+      const validationError = validateOfferPayload(payload);
+
+      if (validationError) {
+        alert(validationError);
+        return;
+      }
 
       const res = await apiFetch(
         isEdit
@@ -582,7 +707,7 @@ export default function Home() {
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify(offerForm),
+          body: JSON.stringify(payload),
         }
       );
 
@@ -665,7 +790,7 @@ export default function Home() {
   async function importAmazonProduct(item) {
     try {
       const offer = {
-        categoria: "smartphone",
+        categoria: "accessori",
         partner: "amazon",
         titolo: item.ItemInfo?.Title?.DisplayValue || "",
         descrizione: item.ItemInfo?.Title?.DisplayValue || "",
@@ -2654,23 +2779,37 @@ export default function Home() {
 
                 <form className="form-grid" onSubmit={saveOffer}>
                   <Field label="Categoria">
-                    <input
+                    <select
                       value={offerForm.categoria}
                       onChange={(e) => setOfferForm({ ...offerForm, categoria: e.target.value })}
-                    />
+                    >
+                      {OFFER_CATEGORIES.map((category) => (
+                        <option key={category.value} value={category.value}>
+                          {category.label}
+                        </option>
+                      ))}
+                    </select>
                   </Field>
 
                   <Field label="Partner">
-                    <input
+                    <select
                       value={offerForm.partner}
                       onChange={(e) => setOfferForm({ ...offerForm, partner: e.target.value })}
-                    />
+                    >
+                      {OFFER_PARTNERS.map((partner) => (
+                        <option key={partner.value} value={partner.value}>
+                          {partner.label}
+                        </option>
+                      ))}
+                    </select>
                   </Field>
 
                   <Field label="Titolo">
                     <input
+                      required
                       value={offerForm.titolo}
                       onChange={(e) => setOfferForm({ ...offerForm, titolo: e.target.value })}
+                      placeholder="Es. Cover Samsung Galaxy consigliata"
                     />
                   </Field>
 
@@ -2678,22 +2817,107 @@ export default function Home() {
                     <textarea
                       value={offerForm.descrizione}
                       onChange={(e) => setOfferForm({ ...offerForm, descrizione: e.target.value })}
+                      placeholder="Descrizione breve visibile nella WebApp cliente"
                     />
+                  </Field>
+
+                  <Field label="Template rapidi">
+                    <div className="action-row">
+                      <button type="button" className="small-button" onClick={() => fillOfferTemplate("cover")}>
+                        Cover
+                      </button>
+                      <button type="button" className="small-button" onClick={() => fillOfferTemplate("vetro")}>
+                        Vetro
+                      </button>
+                      <button type="button" className="small-button" onClick={() => fillOfferTemplate("caricatore")}>
+                        Caricatore
+                      </button>
+                    </div>
                   </Field>
 
                   <Field label="Link affiliato">
                     <input
+                      required
+                      type="url"
                       value={offerForm.affiliate_url}
                       onChange={(e) => setOfferForm({ ...offerForm, affiliate_url: e.target.value })}
+                      placeholder="https://..."
                     />
                   </Field>
 
                   <Field label="URL immagine">
                     <input
+                      type="url"
                       value={offerForm.image_url}
                       onChange={(e) => setOfferForm({ ...offerForm, image_url: e.target.value })}
+                      placeholder="https://..."
                     />
                   </Field>
+
+                  <div className="inline-info-box">
+                    <div>
+                      <div className="row-title">Anteprima WebApp cliente</div>
+                      <div className="row-subtitle">
+                        Controlla titolo, descrizione, immagine e link prima di salvare.
+                      </div>
+                    </div>
+
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "78px 1fr",
+                        gap: "12px",
+                        alignItems: "center",
+                        width: "100%",
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: "78px",
+                          height: "78px",
+                          borderRadius: "14px",
+                          border: "1px solid #e2e8f0",
+                          background: "#fff",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          overflow: "hidden",
+                        }}
+                      >
+                        {offerForm.image_url ? (
+                          <img
+                            src={offerForm.image_url}
+                            alt="Anteprima offerta"
+                            style={{
+                              width: "100%",
+                              height: "100%",
+                              objectFit: "contain",
+                            }}
+                          />
+                        ) : (
+                          <span className="row-subtitle">No img</span>
+                        )}
+                      </div>
+
+                      <div>
+                        <div className="row-title">{offerForm.titolo || "Titolo offerta"}</div>
+                        <div className="row-subtitle">{offerForm.descrizione || "Descrizione offerta"}</div>
+                        <div className="action-row" style={{ marginTop: "8px" }}>
+                          <span className="badge badge-blue">{getOfferCategoryLabel(offerForm.categoria)}</span>
+                          <span className="badge badge-green">{getOfferPartnerLabel(offerForm.partner)}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="action-row">
+                      <button type="button" className="soft-button" onClick={() => openOfferLink()}>
+                        Prova link
+                      </button>
+                      <button type="button" className="soft-button" onClick={() => copyOfferLink()}>
+                        Copia link
+                      </button>
+                    </div>
+                  </div>
 
                   <div className="form-actions">
                     <button type="submit" className="primary-button">
@@ -2722,7 +2946,7 @@ export default function Home() {
                     <div>
                       <h2 className="panel-title">Import Amazon</h2>
                       <div className="panel-subtitle">
-                        Cerca prodotti e importali nelle offerte.
+                        Cerca prodotti e importali nelle offerte. I prodotti Amazon vengono importati come Accessori.
                       </div>
                     </div>
                   </div>
@@ -2815,13 +3039,22 @@ export default function Home() {
                                   </div>
                                 </div>
                               </td>
-                              <td>{offer.categoria || "-"}</td>
-                              <td>{offer.partner || "-"}</td>
+                              <td>
+                                <span className="badge badge-blue">{getOfferCategoryLabel(offer.categoria)}</span>
+                              </td>
+                              <td>
+                                <span className="badge badge-green">{getOfferPartnerLabel(offer.partner)}</span>
+                              </td>
                               <td>
                                 {offer.affiliate_url ? (
-                                  <button type="button" className="small-button" onClick={() => window.open(offer.affiliate_url, "_blank")}>
-                                    Apri
-                                  </button>
+                                  <div className="action-row">
+                                    <button type="button" className="small-button" onClick={() => openOfferLink(offer)}>
+                                      Apri
+                                    </button>
+                                    <button type="button" className="small-button" onClick={() => copyOfferLink(offer)}>
+                                      Copia
+                                    </button>
+                                  </div>
                                 ) : "-"}
                               </td>
                               <td>
