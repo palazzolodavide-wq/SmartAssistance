@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 const API_URL = "";
+const LAVIALATTEA_FLYER_URL = "https://www.lavialattea.it/volantino/";
 
 const BRANDS = [
   "Samsung",
@@ -99,6 +100,8 @@ export default function Home() {
   const [whatsAppModalUser, setWhatsAppModalUser] = useState(null);
   const [whatsAppMessage, setWhatsAppMessage] = useState("");
   const [customerDeviceMode, setCustomerDeviceMode] = useState("new");
+  const [flyerPages, setFlyerPages] = useState([]);
+  const [flyerPageIndex, setFlyerPageIndex] = useState(0);
   const [newCustomerReceiptQrAfterSave, setNewCustomerReceiptQrAfterSave] = useState(false);
   const [deviceReceiptQrAfterSave, setDeviceReceiptQrAfterSave] = useState(false);
 
@@ -175,6 +178,18 @@ export default function Home() {
       setUsers(Array.isArray(usersData) ? usersData : []);
       setDevices(Array.isArray(devicesData) ? devicesData : []);
       setOffers(Array.isArray(offersData) ? offersData : []);
+
+      try {
+        const flyerRes = await apiFetch(`${API_URL}/api/flyer/lavialattea/pages`);
+        const flyerData = await flyerRes.json();
+
+        if (flyerData.success && Array.isArray(flyerData.pages)) {
+          setFlyerPages(flyerData.pages);
+          setFlyerPageIndex(0);
+        }
+      } catch (flyerErr) {
+        console.error("Errore info volantino", flyerErr);
+      }
 
       try {
         const statsRes = await apiFetch(`${API_URL}/api/stats/clicks`);
@@ -1044,6 +1059,60 @@ export default function Home() {
     } catch (err) {
       prompt("Copia link upload", receiptUploadModal.uploadUrl);
     }
+  }
+
+  async function copyLaViaLatteaFlyerUrl() {
+    try {
+      await navigator.clipboard.writeText(`${window.location.origin}/api/flyer/lavialattea/pages`);
+      alert("Link volantino copiato");
+    } catch (err) {
+      prompt("Copia link volantino", `${window.location.origin}/api/flyer/lavialattea/pages`);
+    }
+  }
+
+  function openLaViaLatteaFlyerAdmin() {
+    const currentPage = flyerPages[flyerPageIndex] || flyerPages[0];
+
+    if (!currentPage) {
+      alert("Volantino non disponibile");
+      return;
+    }
+
+    const win = window.open();
+
+    if (!win) {
+      alert("Popup bloccato dal browser");
+      return;
+    }
+
+    win.document.write(`
+      <!doctype html>
+      <html>
+        <head>
+          <title>Controllo volantino La Via Lattea</title>
+          <meta charset="utf-8" />
+          <style>
+            body {
+              margin: 0;
+              background: #111827;
+              display: flex;
+              justify-content: center;
+            }
+
+            img {
+              max-width: 100%;
+              height: auto;
+              display: block;
+            }
+          </style>
+        </head>
+        <body>
+          <img src="${currentPage.image_url}" alt="Volantino La Via Lattea" />
+        </body>
+      </html>
+    `);
+
+    win.document.close();
   }
 
   function renderTopbarTitle() {
