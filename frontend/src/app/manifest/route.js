@@ -9,7 +9,7 @@ export async function GET(request) {
   const manifest = {
     id: startUrl,
     name: "Smart Assistance",
-    short_name: "Smart Assist",
+    short_name: "Smart",
     description: "Assistenza, garanzia e accessori consigliati per il tuo smartphone.",
     start_url: startUrl,
     scope,
@@ -21,16 +21,37 @@ export async function GET(request) {
     categories: ["shopping", "utilities"],
     icons: [
       {
-        src: "/icons/icon-192.png",
+        src: "/icons/sa-icon-192.png",
         sizes: "192x192",
         type: "image/png",
         purpose: "any maskable"
       },
       {
-        src: "/icons/icon-512.png",
+        src: "/icons/sa-icon-512.png",
         sizes: "512x512",
         type: "image/png",
         purpose: "any maskable"
+      },
+      {
+        src: "/icons/sa-apple-touch-icon.png",
+        sizes: "180x180",
+        type: "image/png",
+        purpose: "any"
+      }
+    ],
+    shortcuts: [
+      {
+        name: "Offerte per te",
+        short_name: "Offerte",
+        description: "Apri la sezione offerte consigliate.",
+        url: startUrl,
+        icons: [
+          {
+            src: "/icons/sa-icon-192.png",
+            sizes: "192x192",
+            type: "image/png"
+          }
+        ]
       }
     ]
   };

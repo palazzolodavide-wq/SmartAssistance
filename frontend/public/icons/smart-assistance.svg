@@ -1,0 +1,13 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <circle cx="392" cy="80" r="180" fill="#60A5FA" fill-opacity="0.24"/>
+  <rect x="64" y="64" width="384" height="384" rx="96" fill="white" fill-opacity="0.10" stroke="white" stroke-opacity="0.28" stroke-width="10"/>
+  <text x="256" y="256" text-anchor="middle" dominant-baseline="middle" font-family="Arial, Helvetica, sans-serif" font-weight="900" font-size="176" fill="white">SA</text>
+  <text x="256" y="352" text-anchor="middle" dominant-baseline="middle" font-family="Arial, Helvetica, sans-serif" font-weight="900" font-size="48" letter-spacing="7" fill="#DBEAFE">SMART</text>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="512" y2="512">
+      <stop stop-color="#2563EB"/>
+      <stop offset="1" stop-color="#0F172A"/>
+    </linearGradient>
+  </defs>
+</svg>

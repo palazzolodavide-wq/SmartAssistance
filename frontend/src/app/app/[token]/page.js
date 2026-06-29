@@ -77,7 +77,7 @@ export default function CustomerPage() {
       document.head.appendChild(manifestLink);
     }
 
-    manifestLink.href = `/manifest?token=${encodeURIComponent(token)}`;
+    manifestLink.href = `/manifest?token=${encodeURIComponent(token)}&v=28`;
 
     let themeColor = document.querySelector('meta[name="theme-color"]');
 
@@ -88,6 +88,16 @@ export default function CustomerPage() {
     }
 
     themeColor.content = "#0f172a";
+
+    let appleIcon = document.querySelector('link[rel="apple-touch-icon"]');
+
+    if (!appleIcon) {
+      appleIcon = document.createElement("link");
+      appleIcon.rel = "apple-touch-icon";
+      document.head.appendChild(appleIcon);
+    }
+
+    appleIcon.href = "/icons/sa-apple-touch-icon.png";
 
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("/sw.js").catch(() => {});
@@ -340,12 +350,21 @@ export default function CustomerPage() {
       border: "1px solid rgba(255,255,255,.10)",
     },
     brand: {
+      display: "flex",
+      alignItems: "center",
+      gap: "10px",
       fontSize: "14px",
       letterSpacing: ".08em",
       textTransform: "uppercase",
-      opacity: .8,
+      opacity: .92,
       marginBottom: "18px",
       fontWeight: "bold",
+    },
+    brandLogo: {
+      width: "34px",
+      height: "34px",
+      borderRadius: "12px",
+      boxShadow: "0 10px 24px rgba(0,0,0,.28)",
     },
     title: {
       margin: 0,
@@ -801,7 +820,12 @@ export default function CustomerPage() {
                 }}
               >
                 <div style={{ ...styles.brand, marginBottom: 0 }}>
-                  Smart Assistance
+                  <img
+                    src="/icons/sa-icon-192.png"
+                    alt="Smart Assistance"
+                    style={styles.brandLogo}
+                  />
+                  <span>Smart Assistance</span>
                 </div>
 
                 {installPrompt && !isInstalled && (

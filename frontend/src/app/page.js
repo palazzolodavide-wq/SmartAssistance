@@ -1399,8 +1399,15 @@ export default function Home() {
           display: flex;
           align-items: center;
           justify-content: center;
-          font-size: 22px;
           box-shadow: 0 12px 30px rgba(37,99,235,.35);
+          overflow: hidden;
+        }
+
+        .brand-icon img {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+          display: block;
         }
 
         .brand-title {
@@ -1992,7 +1999,9 @@ export default function Home() {
 
       <aside className="sidebar">
         <div className="brand-box">
-          <div className="brand-icon">SA</div>
+          <div className="brand-icon">
+            <img src="/icons/sa-icon-192.png" alt="Smart Assistance" />
+          </div>
           <div>
             <div className="brand-title">Smart Assistance</div>
             <div className="brand-subtitle">Admin Dashboard</div>
