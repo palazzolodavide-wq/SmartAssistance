@@ -108,8 +108,14 @@ export default function Home() {
       total_clicks: 0,
       clicks_24h: 0,
       clicks_7d: 0,
+      clicks_30d: 0,
+      unique_customers_7d: 0,
+      unique_products: 0,
     },
     topProducts: [],
+    dailyClicks: [],
+    sourceStats: [],
+    customerStats: [],
     recentClicks: [],
   });
 
@@ -1240,6 +1246,86 @@ export default function Home() {
     win.document.close();
   }
 
+  function formatInteger(value) {
+    return Number(value || 0).toLocaleString("it-IT");
+  }
+
+  function getMaxDailyClicks() {
+    return Math.max(
+      1,
+      ...(clickStats.dailyClicks || []).map((item) => Number(item.clicks || 0))
+    );
+  }
+
+  function exportClickStatsCsv() {
+    const rows = [
+      ["tipo", "valore_1", "valore_2", "valore_3"],
+      ["click_totali", clickStats.summary?.total_clicks || 0, "", ""],
+      ["click_24h", clickStats.summary?.clicks_24h || 0, "", ""],
+      ["click_7_giorni", clickStats.summary?.clicks_7d || 0, "", ""],
+      ["click_30_giorni", clickStats.summary?.clicks_30d || 0, "", ""],
+      ["clienti_unici_7_giorni", clickStats.summary?.unique_customers_7d || 0, "", ""],
+      ["prodotti_cliccati", clickStats.summary?.unique_products || 0, "", ""],
+      [],
+      ["giorno", "click", "", ""],
+      ...(clickStats.dailyClicks || []).map((item) => [
+        item.label || item.day || "",
+        item.clicks || 0,
+        "",
+        "",
+      ]),
+      [],
+      ["prodotto", "click_totali", "click_7_giorni", "ultimo_click"],
+      ...(clickStats.topProducts || []).map((item) => [
+        item.titolo || "",
+        item.clicks || 0,
+        item.clicks_7d || 0,
+        item.last_click ? new Date(item.last_click).toLocaleString("it-IT") : "",
+      ]),
+      [],
+      ["fonte", "click_totali", "click_7_giorni", "ultimo_click"],
+      ...(clickStats.sourceStats || []).map((item) => [
+        item.source || "webapp",
+        item.clicks || 0,
+        item.clicks_7d || 0,
+        item.last_click ? new Date(item.last_click).toLocaleString("it-IT") : "",
+      ]),
+      [],
+      ["cliente", "click_totali", "click_7_giorni", "ultimo_click"],
+      ...(clickStats.customerStats || []).map((item) => [
+        item.customer_code
+          ? `${item.customer_code} - ${item.nome || ""} ${item.cognome || ""}`.trim()
+          : "Cliente non disponibile",
+        item.clicks || 0,
+        item.clicks_7d || 0,
+        item.last_click ? new Date(item.last_click).toLocaleString("it-IT") : "",
+      ]),
+    ];
+
+    const csv = rows
+      .map((row) =>
+        row
+          .map((cell) => `"${String(cell ?? "").replace(/"/g, '""')}"`)
+          .join(";")
+      )
+      .join("\\n");
+
+    const blob = new Blob([csv], {
+      type: "text/csv;charset=utf-8",
+    });
+
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+
+    a.href = url;
+    a.download = `smart-assistance-click-stats-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+
+    URL.revokeObjectURL(url);
+  }
+
   function renderTopbarTitle() {
     const item = NAV_ITEMS.find((nav) => nav.id === activeSection);
 
@@ -1793,6 +1879,37 @@ export default function Home() {
           color: #64748b;
           font-size: 13px;
           line-height: 1.45;
+        }
+
+        .daily-chart {
+          display: grid;
+          grid-template-columns: repeat(14, minmax(18px, 1fr));
+          gap: 8px;
+          align-items: end;
+          min-height: 190px;
+          padding: 18px 4px 4px;
+        }
+
+        .daily-bar-wrap {
+          display: grid;
+          gap: 8px;
+          align-items: end;
+          text-align: center;
+          color: #64748b;
+          font-size: 11px;
+        }
+
+        .daily-bar {
+          width: 100%;
+          min-height: 6px;
+          border-radius: 999px 999px 6px 6px;
+          background: linear-gradient(180deg, #2563eb, #93c5fd);
+        }
+
+        .daily-value {
+          color: #0f172a;
+          font-weight: 900;
+          font-size: 12px;
         }
 
         .mobile-nav {
@@ -3082,10 +3199,42 @@ export default function Home() {
         {!loading && activeSection === "stats" && (
           <>
             <section className="kpi-grid">
-              <KpiCard label="Click totali" value={clickStats.summary?.total_clicks || 0} />
-              <KpiCard label="Click 24h" value={clickStats.summary?.clicks_24h || 0} />
-              <KpiCard label="Click 7 giorni" value={clickStats.summary?.clicks_7d || 0} />
-              <KpiCard label="Prodotti cliccati" value={(clickStats.topProducts || []).length} />
+              <KpiCard label="Click totali" value={formatInteger(clickStats.summary?.total_clicks)} />
+              <KpiCard label="Click 24h" value={formatInteger(clickStats.summary?.clicks_24h)} />
+              <KpiCard label="Click 7 giorni" value={formatInteger(clickStats.summary?.clicks_7d)} />
+              <KpiCard label="Click 30 giorni" value={formatInteger(clickStats.summary?.clicks_30d)} />
+              <KpiCard label="Clienti 7 giorni" value={formatInteger(clickStats.summary?.unique_customers_7d)} />
+              <KpiCard label="Prodotti cliccati" value={formatInteger(clickStats.summary?.unique_products)} />
+            </section>
+
+            <section className="panel" style={{ marginBottom: "18px" }}>
+              <div className="panel-header">
+                <div>
+                  <h2 className="panel-title">Andamento ultimi 14 giorni</h2>
+                  <div className="panel-subtitle">
+                    Click giornalieri sulle offerte affiliate e sui contenuti tracciati.
+                  </div>
+                </div>
+
+                <button type="button" className="primary-button" onClick={exportClickStatsCsv}>
+                  Esporta CSV
+                </button>
+              </div>
+
+              <div className="daily-chart">
+                {(clickStats.dailyClicks || []).map((item) => {
+                  const clicks = Number(item.clicks || 0);
+                  const height = Math.max(6, Math.round((clicks / getMaxDailyClicks()) * 150));
+
+                  return (
+                    <div key={item.day || item.label} className="daily-bar-wrap">
+                      <div className="daily-value">{clicks}</div>
+                      <div className="daily-bar" style={{ height: `${height}px` }} />
+                      <div>{item.label}</div>
+                    </div>
+                  );
+                })}
+              </div>
             </section>
 
             <section className="dashboard-grid">
@@ -3096,6 +3245,7 @@ export default function Home() {
                     <thead>
                       <tr>
                         <th>Click</th>
+                        <th>7 giorni</th>
                         <th>Prodotto</th>
                         <th>Ultimo click</th>
                       </tr>
@@ -3103,13 +3253,89 @@ export default function Home() {
                     <tbody>
                       {(clickStats.topProducts || []).length === 0 ? (
                         <tr>
-                          <td colSpan="3">Nessun click registrato.</td>
+                          <td colSpan="4">Nessun click registrato.</td>
                         </tr>
                       ) : (
                         clickStats.topProducts.map((item, index) => (
-                          <tr key={item.asin || item.titolo || index}>
+                          <tr key={`${item.asin || item.titolo || index}-${index}`}>
                             <td><span className="badge badge-blue">{item.clicks}</span></td>
-                            <td>{item.titolo}</td>
+                            <td><span className="badge badge-green">{item.clicks_7d || 0}</span></td>
+                            <td>
+                              <div className="row-title">{item.titolo}</div>
+                              {item.affiliate_url && (
+                                <button type="button" className="small-button" onClick={() => window.open(item.affiliate_url, "_blank")}>
+                                  Apri link
+                                </button>
+                              )}
+                            </td>
+                            <td>{item.last_click ? new Date(item.last_click).toLocaleString("it-IT") : "-"}</td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div className="panel">
+                <h2 className="panel-title">Fonti click</h2>
+                <div className="table-wrap" style={{ marginTop: "14px" }}>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Fonte</th>
+                        <th>Click</th>
+                        <th>7 giorni</th>
+                        <th>Ultimo</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(clickStats.sourceStats || []).length === 0 ? (
+                        <tr>
+                          <td colSpan="4">Nessuna fonte registrata.</td>
+                        </tr>
+                      ) : (
+                        clickStats.sourceStats.map((item) => (
+                          <tr key={item.source}>
+                            <td><span className="badge badge-blue">{item.source || "webapp"}</span></td>
+                            <td>{item.clicks}</td>
+                            <td>{item.clicks_7d || 0}</td>
+                            <td>{item.last_click ? new Date(item.last_click).toLocaleString("it-IT") : "-"}</td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div className="panel">
+                <h2 className="panel-title">Clienti più attivi</h2>
+                <div className="table-wrap" style={{ marginTop: "14px" }}>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Cliente</th>
+                        <th>Click</th>
+                        <th>7 giorni</th>
+                        <th>Ultimo</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(clickStats.customerStats || []).length === 0 ? (
+                        <tr>
+                          <td colSpan="4">Nessun cliente registrato nelle statistiche.</td>
+                        </tr>
+                      ) : (
+                        clickStats.customerStats.map((item, index) => (
+                          <tr key={`${item.customer_code || "unknown"}-${index}`}>
+                            <td>
+                              {item.customer_code
+                                ? `${item.customer_code} - ${item.nome || ""} ${item.cognome || ""}`.trim()
+                                : "Cliente non disponibile"}
+                            </td>
+                            <td>{item.clicks}</td>
+                            <td>{item.clicks_7d || 0}</td>
                             <td>{item.last_click ? new Date(item.last_click).toLocaleString("it-IT") : "-"}</td>
                           </tr>
                         ))
@@ -3127,13 +3353,14 @@ export default function Home() {
                       <tr>
                         <th>Ora</th>
                         <th>Cliente</th>
+                        <th>Prodotto</th>
                         <th>Fonte</th>
                       </tr>
                     </thead>
                     <tbody>
                       {(clickStats.recentClicks || []).length === 0 ? (
                         <tr>
-                          <td colSpan="3">Nessun click recente.</td>
+                          <td colSpan="4">Nessun click recente.</td>
                         </tr>
                       ) : (
                         clickStats.recentClicks.map((click, index) => (
@@ -3144,6 +3371,7 @@ export default function Home() {
                                 ? `${click.customer_code} - ${click.nome || ""} ${click.cognome || ""}`
                                 : "Cliente non disponibile"}
                             </td>
+                            <td>{click.titolo || "-"}</td>
                             <td>{click.source || "webapp"}</td>
                           </tr>
                         ))

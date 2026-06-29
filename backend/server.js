@@ -875,7 +875,15 @@ app.get("/api/stats/clicks", async (req, res) => {
         )::int AS clicks_24h,
         COUNT(*) FILTER (
           WHERE created_at >= NOW() - INTERVAL '7 days'
-        )::int AS clicks_7d
+        )::int AS clicks_7d,
+        COUNT(*) FILTER (
+          WHERE created_at >= NOW() - INTERVAL '30 days'
+        )::int AS clicks_30d,
+        COUNT(DISTINCT user_id) FILTER (
+          WHERE user_id IS NOT NULL
+            AND created_at >= NOW() - INTERVAL '7 days'
+        )::int AS unique_customers_7d,
+        COUNT(DISTINCT COALESCE(NULLIF(asin, ''), affiliate_url))::int AS unique_products
       FROM offer_clicks
     `);
 
@@ -883,12 +891,74 @@ app.get("/api/stats/clicks", async (req, res) => {
       SELECT
         COALESCE(asin, '') AS asin,
         COALESCE(NULLIF(titolo, ''), 'Prodotto senza titolo') AS titolo,
+        COALESCE(NULLIF(affiliate_url, ''), '') AS affiliate_url,
         COUNT(*)::int AS clicks,
+        COUNT(*) FILTER (
+          WHERE created_at >= NOW() - INTERVAL '7 days'
+        )::int AS clicks_7d,
         MAX(created_at) AS last_click
       FROM offer_clicks
-      GROUP BY asin, titolo
+      GROUP BY asin, titolo, affiliate_url
       ORDER BY clicks DESC, last_click DESC
-      LIMIT 10
+      LIMIT 15
+    `);
+
+    const dailyClicksResult = await pool.query(`
+      WITH days AS (
+        SELECT generate_series(
+          CURRENT_DATE - INTERVAL '13 days',
+          CURRENT_DATE,
+          INTERVAL '1 day'
+        )::date AS day
+      ),
+      clicks AS (
+        SELECT
+          created_at::date AS day,
+          COUNT(*)::int AS clicks
+        FROM offer_clicks
+        WHERE created_at >= CURRENT_DATE - INTERVAL '13 days'
+        GROUP BY created_at::date
+      )
+      SELECT
+        days.day,
+        TO_CHAR(days.day, 'DD/MM') AS label,
+        COALESCE(clicks.clicks, 0)::int AS clicks
+      FROM days
+      LEFT JOIN clicks
+        ON clicks.day = days.day
+      ORDER BY days.day ASC
+    `);
+
+    const sourceStatsResult = await pool.query(`
+      SELECT
+        COALESCE(NULLIF(source, ''), 'webapp') AS source,
+        COUNT(*)::int AS clicks,
+        COUNT(*) FILTER (
+          WHERE created_at >= NOW() - INTERVAL '7 days'
+        )::int AS clicks_7d,
+        MAX(created_at) AS last_click
+      FROM offer_clicks
+      GROUP BY COALESCE(NULLIF(source, ''), 'webapp')
+      ORDER BY clicks DESC, last_click DESC
+      LIMIT 12
+    `);
+
+    const customerStatsResult = await pool.query(`
+      SELECT
+        u.customer_code,
+        u.nome,
+        u.cognome,
+        COUNT(*)::int AS clicks,
+        COUNT(*) FILTER (
+          WHERE oc.created_at >= NOW() - INTERVAL '7 days'
+        )::int AS clicks_7d,
+        MAX(oc.created_at) AS last_click
+      FROM offer_clicks oc
+      LEFT JOIN users u
+        ON oc.user_id = u.id
+      GROUP BY u.customer_code, u.nome, u.cognome
+      ORDER BY clicks DESC, last_click DESC
+      LIMIT 12
     `);
 
     const recentClicksResult = await pool.query(`
@@ -897,6 +967,7 @@ app.get("/api/stats/clicks", async (req, res) => {
         oc.asin,
         oc.titolo,
         oc.source,
+        oc.affiliate_url,
         u.customer_code,
         u.nome,
         u.cognome
@@ -904,7 +975,7 @@ app.get("/api/stats/clicks", async (req, res) => {
       LEFT JOIN users u
         ON oc.user_id = u.id
       ORDER BY oc.created_at DESC
-      LIMIT 10
+      LIMIT 30
     `);
 
     res.json({
@@ -912,9 +983,15 @@ app.get("/api/stats/clicks", async (req, res) => {
       summary: summaryResult.rows[0] || {
         total_clicks: 0,
         clicks_24h: 0,
-        clicks_7d: 0
+        clicks_7d: 0,
+        clicks_30d: 0,
+        unique_customers_7d: 0,
+        unique_products: 0
       },
       topProducts: topProductsResult.rows,
+      dailyClicks: dailyClicksResult.rows,
+      sourceStats: sourceStatsResult.rows,
+      customerStats: customerStatsResult.rows,
       recentClicks: recentClicksResult.rows
     });
   } catch (err) {
@@ -924,6 +1001,12 @@ app.get("/api/stats/clicks", async (req, res) => {
     });
   }
 });
+
+/*
+|--------------------------------------------------------------------------
+| DEVICES
+|--------------------------------------------------------------------------
+*/
 
 /*
 |--------------------------------------------------------------------------
