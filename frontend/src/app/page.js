@@ -127,6 +127,7 @@ export default function Home() {
   const [broadcastIndex, setBroadcastIndex] = useState(0);
   const [broadcastSending, setBroadcastSending] = useState(false);
   const [broadcastResult, setBroadcastResult] = useState(null);
+  const [broadcastHistory, setBroadcastHistory] = useState([]);
   const [expandedCustomerId, setExpandedCustomerId] = useState(null);
   const [customerDeviceMode, setCustomerDeviceMode] = useState("list");
   const [newCustomerReceiptQrAfterSave, setNewCustomerReceiptQrAfterSave] = useState(false);
@@ -215,6 +216,17 @@ export default function Home() {
         }
       } catch (statsErr) {
         console.error("Errore statistiche click", statsErr);
+      }
+
+      try {
+        const broadcastRes = await apiFetch(`${API_URL}/api/broadcast/whatsapp/history`);
+        const broadcastData = await broadcastRes.json();
+
+        if (broadcastData.success && Array.isArray(broadcastData.broadcasts)) {
+          setBroadcastHistory(broadcastData.broadcasts);
+        }
+      } catch (broadcastErr) {
+        console.error("Errore storico broadcast WhatsApp", broadcastErr);
       }
     } catch (err) {
       alert(err.message);
@@ -1036,6 +1048,7 @@ export default function Home() {
       }
 
       setBroadcastResult(data);
+      await loadData();
       alert(`Broadcast completato. Inviati: ${data.sent_count}. Errori: ${data.failed_count}.`);
     } catch (err) {
       setBroadcastResult({
@@ -3624,6 +3637,19 @@ export default function Home() {
                       {broadcastResult.success
                         ? `Inviati: ${broadcastResult.sent_count || 0} · Errori: ${broadcastResult.failed_count || 0} · Saltati: ${broadcastResult.skipped_count || 0}`
                         : (broadcastResult.error || "Errore non specificato")}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {broadcastHistory.length > 0 && (
+                <div className="inline-info-box" style={{ marginTop: "12px" }}>
+                  <div>
+                    <div className="row-title">Ultimi broadcast</div>
+                    <div className="row-subtitle">
+                      {broadcastHistory.slice(0, 3).map((item) =>
+                        `${new Date(item.created_at).toLocaleString("it-IT")} · inviati ${item.sent_count}/${item.target_count}`
+                      ).join(" | ")}
                     </div>
                   </div>
                 </div>

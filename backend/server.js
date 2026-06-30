@@ -873,6 +873,8 @@ app.get("/api/stats/clicks", async (req, res) => {
 */
 
 app.post("/api/broadcast/whatsapp", async (req, res) => {
+  let broadcastId = null;
+
   try {
     const { message, customer_ids } = req.body;
 
@@ -922,6 +924,27 @@ app.post("/api/broadcast/whatsapp", async (req, res) => {
     );
 
     const customers = customersResult.rows;
+
+    const broadcastResult = await pool.query(
+      `
+      INSERT INTO whatsapp_broadcasts (
+        message,
+        target_count,
+        status,
+        created_by
+      )
+      VALUES ($1, $2, 'running', $3)
+      RETURNING id
+      `,
+      [
+        cleanMessage,
+        customers.length,
+        req.user?.id || null
+      ]
+    );
+
+    broadcastId = broadcastResult.rows[0].id;
+
     const sent = [];
     const failed = [];
     const skipped = [];
@@ -930,10 +953,40 @@ app.post("/api/broadcast/whatsapp", async (req, res) => {
       const chatId = normalizeWhatsAppChatId(customer.telefono);
 
       if (!chatId) {
-        skipped.push({
+        const skippedItem = {
           customer,
           reason: "Telefono non valido"
-        });
+        };
+
+        skipped.push(skippedItem);
+
+        await pool.query(
+          `
+          INSERT INTO whatsapp_broadcast_recipients (
+            broadcast_id,
+            customer_id,
+            customer_code,
+            nome,
+            cognome,
+            telefono,
+            chat_id,
+            status,
+            error
+          )
+          VALUES ($1,$2,$3,$4,$5,$6,$7,'skipped',$8)
+          `,
+          [
+            broadcastId,
+            customer.id,
+            customer.customer_code,
+            customer.nome,
+            customer.cognome,
+            customer.telefono,
+            chatId,
+            skippedItem.reason
+          ]
+        );
+
         continue;
       }
 
@@ -943,24 +996,100 @@ app.post("/api/broadcast/whatsapp", async (req, res) => {
           text: cleanMessage
         });
 
-        sent.push({
+        const sentItem = {
           customer,
           chatId,
           endpoint: result.endpoint
-        });
+        };
+
+        sent.push(sentItem);
+
+        await pool.query(
+          `
+          INSERT INTO whatsapp_broadcast_recipients (
+            broadcast_id,
+            customer_id,
+            customer_code,
+            nome,
+            cognome,
+            telefono,
+            chat_id,
+            status,
+            sent_at
+          )
+          VALUES ($1,$2,$3,$4,$5,$6,$7,'sent',NOW())
+          `,
+          [
+            broadcastId,
+            customer.id,
+            customer.customer_code,
+            customer.nome,
+            customer.cognome,
+            customer.telefono,
+            chatId
+          ]
+        );
 
         await new Promise((resolve) => setTimeout(resolve, 850));
       } catch (err) {
-        failed.push({
+        const failedItem = {
           customer,
           chatId,
           error: err.message
-        });
+        };
+
+        failed.push(failedItem);
+
+        await pool.query(
+          `
+          INSERT INTO whatsapp_broadcast_recipients (
+            broadcast_id,
+            customer_id,
+            customer_code,
+            nome,
+            cognome,
+            telefono,
+            chat_id,
+            status,
+            error
+          )
+          VALUES ($1,$2,$3,$4,$5,$6,$7,'failed',$8)
+          `,
+          [
+            broadcastId,
+            customer.id,
+            customer.customer_code,
+            customer.nome,
+            customer.cognome,
+            customer.telefono,
+            chatId,
+            err.message
+          ]
+        );
       }
     }
 
+    await pool.query(
+      `
+      UPDATE whatsapp_broadcasts
+      SET
+        sent_count = $1,
+        failed_count = $2,
+        skipped_count = $3,
+        status = 'completed'
+      WHERE id = $4
+      `,
+      [
+        sent.length,
+        failed.length,
+        skipped.length,
+        broadcastId
+      ]
+    );
+
     res.json({
       success: true,
+      broadcast_id: broadcastId,
       total: customers.length,
       sent_count: sent.length,
       failed_count: failed.length,
@@ -968,6 +1097,109 @@ app.post("/api/broadcast/whatsapp", async (req, res) => {
       sent,
       failed,
       skipped
+    });
+  } catch (err) {
+    if (broadcastId) {
+      await pool.query(
+        `
+        UPDATE whatsapp_broadcasts
+        SET status = 'failed'
+        WHERE id = $1
+        `,
+        [broadcastId]
+      ).catch(() => {});
+    }
+
+    res.status(500).json({
+      success: false,
+      broadcast_id: broadcastId,
+      error: err.message
+    });
+  }
+});
+
+app.get("/api/broadcast/whatsapp/history", async (req, res) => {
+  try {
+    const broadcastsResult = await pool.query(`
+      SELECT
+        id,
+        LEFT(message, 220) AS message_preview,
+        target_count,
+        sent_count,
+        failed_count,
+        skipped_count,
+        status,
+        created_at
+      FROM whatsapp_broadcasts
+      ORDER BY created_at DESC
+      LIMIT 20
+    `);
+
+    res.json({
+      success: true,
+      broadcasts: broadcastsResult.rows
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      error: err.message
+    });
+  }
+});
+
+app.get("/api/broadcast/whatsapp/history/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const broadcastResult = await pool.query(
+      `
+      SELECT
+        id,
+        message,
+        target_count,
+        sent_count,
+        failed_count,
+        skipped_count,
+        status,
+        created_at
+      FROM whatsapp_broadcasts
+      WHERE id = $1
+      `,
+      [id]
+    );
+
+    if (broadcastResult.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: "Broadcast non trovato"
+      });
+    }
+
+    const recipientsResult = await pool.query(
+      `
+      SELECT
+        id,
+        customer_id,
+        customer_code,
+        nome,
+        cognome,
+        telefono,
+        chat_id,
+        status,
+        error,
+        sent_at,
+        created_at
+      FROM whatsapp_broadcast_recipients
+      WHERE broadcast_id = $1
+      ORDER BY created_at ASC
+      `,
+      [id]
+    );
+
+    res.json({
+      success: true,
+      broadcast: broadcastResult.rows[0],
+      recipients: recipientsResult.rows
     });
   } catch (err) {
     res.status(500).json({
