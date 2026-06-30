@@ -364,7 +364,6 @@ app.delete("/api/users/:id", async (req, res) => {
 
 app.get("/api/app/:token", async (req, res) => {
   try {
-
     const { token } = req.params;
 
     const customerResult = await pool.query(
@@ -412,8 +411,44 @@ app.get("/api/app/:token", async (req, res) => {
       [customer.id]
     );
 
-        const device = devicesResult.rows[0];
+    const device = devicesResult.rows[0] || null;
 
+    let manualOffers = [];
+
+    try {
+      const manualOffersResult = await pool.query(`
+        SELECT
+          id::text AS asin,
+          categoria,
+          partner,
+          titolo,
+          descrizione,
+          affiliate_url,
+          image_url,
+          NULL::text AS prezzo,
+          NULL::text AS prezzo_precedente,
+          NULL::int AS sconto_percentuale,
+          COALESCE(tipo_offerta, 'manual') AS tipo_offerta,
+          'manual' AS source
+        FROM offers
+        WHERE affiliate_url IS NOT NULL
+          AND TRIM(affiliate_url) <> ''
+          AND titolo IS NOT NULL
+          AND TRIM(titolo) <> ''
+        ORDER BY created_at DESC
+        LIMIT 50
+      `);
+
+      manualOffers = manualOffersResult.rows;
+    } catch (manualErr) {
+      console.error("MANUAL OFFERS ERROR:", manualErr.message);
+      manualOffers = [];
+    }
+
+    let amazonRecommendedOffers = [];
+
+    if (device?.marca && device?.modello) {
+      try {
         const searches = [
           `${device.marca} ${device.modello} cover`,
           `${device.marca} ${device.modello} pellicola vetro`,
@@ -426,59 +461,102 @@ app.get("/api/app/:token", async (req, res) => {
           searches.map(searchCreators)
         );
 
-            const offers = creatorResponses
-              .flatMap(response =>
-                response.searchResult?.items || []
-              )
-              .map(item => ({
-                    asin: item.asin,
-                    categoria: device.categoria,
-                    titolo:
-                      item.itemInfo?.title?.displayValue || "",
-                    descrizione:
-                      item.itemInfo?.title?.displayValue || "",
-                    affiliate_url:
-                      item.detailPageURL || "",
-                    image_url:
-                      item.images?.primary?.medium?.url || null,
-                    prezzo:
-                      item.offersV2?.listings?.[0]?.price?.money?.displayAmount || null,
-                    prezzo_precedente:
-                      item.offersV2?.listings?.[0]?.price?.savingBasis?.money?.displayAmount || null,
-                    sconto_percentuale:
-                      item.offersV2?.listings?.[0]?.price?.savings?.percentage || null,
-                    tipo_offerta: "accessory"
-                  }))
-              .filter(offer =>
-                offer.titolo &&
-                offer.affiliate_url &&
-                offer.asin
-              );
+        const amazonOffers = creatorResponses
+          .flatMap(response =>
+            response.searchResult?.items ||
+            response.SearchResult?.Items ||
+            []
+          )
+          .map(item => ({
+            asin: item.asin || item.ASIN,
+            categoria: device.categoria || "accessori",
+            partner: "amazon",
+            titolo:
+              item.itemInfo?.title?.displayValue ||
+              item.ItemInfo?.Title?.DisplayValue ||
+              "",
+            descrizione:
+              item.itemInfo?.title?.displayValue ||
+              item.ItemInfo?.Title?.DisplayValue ||
+              "",
+            affiliate_url:
+              item.detailPageURL ||
+              item.DetailPageURL ||
+              "",
+            image_url:
+              item.images?.primary?.medium?.url ||
+              item.Images?.Primary?.Medium?.URL ||
+              null,
+            prezzo:
+              item.offersV2?.listings?.[0]?.price?.money?.displayAmount ||
+              item.OffersV2?.Listings?.[0]?.Price?.Money?.DisplayAmount ||
+              null,
+            prezzo_precedente:
+              item.offersV2?.listings?.[0]?.price?.savingBasis?.money?.displayAmount ||
+              item.OffersV2?.Listings?.[0]?.Price?.SavingBasis?.Money?.DisplayAmount ||
+              null,
+            sconto_percentuale:
+              item.offersV2?.listings?.[0]?.price?.savings?.percentage ||
+              item.OffersV2?.Listings?.[0]?.Price?.Savings?.Percentage ||
+              null,
+            tipo_offerta: "accessory",
+            source: "amazon_recommended"
+          }))
+          .filter(offer =>
+            offer.titolo &&
+            offer.affiliate_url &&
+            offer.asin
+          );
 
-            const uniqueOffers = [
-              ...new Map(
-                offers.map(offer => [offer.asin, offer])
-              ).values()
-            ];
-                const trendingOffers =
-          await getTrendingOffers(10);
+        const uniqueAmazonOffers = [
+          ...new Map(
+            amazonOffers.map(offer => [offer.asin, offer])
+          ).values()
+        ];
 
-        res.json({
-          success: true,
-          customer,
-          device: device || null,
-          devices: devicesResult.rows,
-          recommendedOffers:
-              getRecommendedOffers(uniqueOffers),
-          trendingOffers
-        });
+        amazonRecommendedOffers = getRecommendedOffers(uniqueAmazonOffers);
+      } catch (amazonErr) {
+        console.error("CUSTOMER AMAZON OFFERS ERROR:", amazonErr.message);
+        amazonRecommendedOffers = [];
+      }
+    }
+
+    let trendingOffers = [];
+
+    try {
+      trendingOffers = await getTrendingOffers(10);
+    } catch (trendingErr) {
+      console.error("TRENDING OFFERS ERROR:", trendingErr.message);
+      trendingOffers = [];
+    }
+
+    const recommendedOffers = [
+      ...new Map(
+        [...manualOffers, ...amazonRecommendedOffers]
+          .filter(offer => offer?.affiliate_url)
+          .map((offer, index) => [
+            offer.asin || offer.affiliate_url || index,
+            offer
+          ])
+      ).values()
+    ].slice(0, 50);
+
+    res.setHeader("Cache-Control", "no-store");
+
+    res.json({
+      success: true,
+      customer,
+      device,
+      devices: devicesResult.rows,
+      recommendedOffers,
+      manualOffers,
+      trendingOffers
+    });
   } catch (err) {
-
     res.status(500).json({
       success: false,
       error: err.message
     });
-
   }
 });
 

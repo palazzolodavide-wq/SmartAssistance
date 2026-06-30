@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 
 const API_URL = "";
 const BRANDS = [
@@ -100,6 +100,7 @@ export default function Home() {
 
   const [amazonSearch, setAmazonSearch] = useState("");
   const [amazonResults, setAmazonResults] = useState([]);
+  const [amazonSearchMessage, setAmazonSearchMessage] = useState("");
 
   const [clickStats, setClickStats] = useState({
     summary: {
@@ -121,7 +122,11 @@ export default function Home() {
   const [receiptUploadModal, setReceiptUploadModal] = useState(null);
   const [whatsAppModalUser, setWhatsAppModalUser] = useState(null);
   const [whatsAppMessage, setWhatsAppMessage] = useState("");
-  const [customerDeviceMode, setCustomerDeviceMode] = useState("new");
+  const [broadcastModalOpen, setBroadcastModalOpen] = useState(false);
+  const [broadcastMessage, setBroadcastMessage] = useState("");
+  const [broadcastIndex, setBroadcastIndex] = useState(0);
+  const [expandedCustomerId, setExpandedCustomerId] = useState(null);
+  const [customerDeviceMode, setCustomerDeviceMode] = useState("list");
   const [newCustomerReceiptQrAfterSave, setNewCustomerReceiptQrAfterSave] = useState(false);
   const [deviceReceiptQrAfterSave, setDeviceReceiptQrAfterSave] = useState(false);
 
@@ -395,6 +400,7 @@ export default function Home() {
         setEditingUserId(null);
         setUserForm(EMPTY_USER_FORM);
         setNewCustomerDeviceForm(EMPTY_DEVICE_FORM);
+        setCustomerDeviceMode("list");
 
         const shouldOpenQr = newCustomerReceiptQrAfterSave && createdDevice?.id;
         setNewCustomerReceiptQrAfterSave(false);
@@ -419,6 +425,7 @@ export default function Home() {
 
         setEditingUserId(null);
         setUserForm(EMPTY_USER_FORM);
+        setCustomerDeviceMode("list");
 
         await loadData();
       }
@@ -438,6 +445,7 @@ export default function Home() {
 
     setDeviceReceiptQrAfterSave(false);
     setCustomerDeviceMode("new");
+    setExpandedCustomerId(user.id);
     setActiveSection("customers");
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
@@ -449,6 +457,7 @@ export default function Home() {
       user_id: user.id,
     });
     setCustomerDeviceMode("device");
+    setExpandedCustomerId(user.id);
     setActiveSection("customers");
     setTimeout(() => {
       const el = document.getElementById("existing-device-form");
@@ -519,6 +528,7 @@ export default function Home() {
       setEditingDeviceId(null);
       setDeviceForm(EMPTY_DEVICE_FORM);
       setDeviceReceiptQrAfterSave(false);
+      setCustomerDeviceMode("list");
 
       await loadData();
 
@@ -547,6 +557,7 @@ export default function Home() {
 
     setDeviceReceiptQrAfterSave(false);
     setCustomerDeviceMode("device");
+    setExpandedCustomerId(device.user_id || null);
     setActiveSection("customers");
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
@@ -758,34 +769,116 @@ export default function Home() {
     }
   }
 
+  function normalizeAmazonItem(item) {
+    if (!item) {
+      return null;
+    }
+
+    const title =
+      item.titolo ||
+      item.title ||
+      item.itemInfo?.title?.displayValue ||
+      item.ItemInfo?.Title?.DisplayValue ||
+      "";
+
+    const affiliateUrl =
+      item.affiliate_url ||
+      item.detailPageURL ||
+      item.DetailPageURL ||
+      "";
+
+    const imageUrl =
+      item.image_url ||
+      item.images?.primary?.medium?.url ||
+      item.Images?.Primary?.Medium?.URL ||
+      "";
+
+    const asin =
+      item.asin ||
+      item.ASIN ||
+      affiliateUrl ||
+      title;
+
+    if (!title && !affiliateUrl) {
+      return null;
+    }
+
+    return {
+      asin,
+      titolo: title || "Prodotto Amazon",
+      descrizione: title || "Prodotto Amazon",
+      affiliate_url: affiliateUrl,
+      image_url: imageUrl,
+      raw: item,
+    };
+  }
+
+  function extractAmazonItems(data) {
+    const items =
+      data?.SearchResult?.Items ||
+      data?.searchResult?.items ||
+      data?.items ||
+      data?.results ||
+      [];
+
+    return items
+      .map(normalizeAmazonItem)
+      .filter((item) => item && item.affiliate_url);
+  }
+
   async function searchAmazon() {
-    if (!amazonSearch.trim()) {
+    const query = amazonSearch.trim();
+
+    if (!query) {
       alert("Inserisci una ricerca");
       return;
     }
 
     try {
+      setAmazonResults([]);
+      setAmazonSearchMessage("Ricerca in corso...");
+
       const res = await apiFetch(
-        `${API_URL}/api/amazon/search?q=${encodeURIComponent(amazonSearch)}`
+        `${API_URL}/api/amazon/search?q=${encodeURIComponent(query)}`
       );
 
       const data = await res.json();
 
-      setAmazonResults(data?.SearchResult?.Items || []);
+      if (!res.ok) {
+        throw new Error(data.message || data.error || "Errore ricerca Amazon");
+      }
+
+      const items = extractAmazonItems(data);
+
+      if (items.length === 0) {
+        setAmazonSearchMessage("Nessun risultato automatico trovato. Puoi comunque creare l'offerta manualmente nel modulo a sinistra.");
+        return;
+      }
+
+      setAmazonResults(items);
+      setAmazonSearchMessage(`${items.length} prodotti trovati.`);
     } catch (err) {
-      alert(err.message);
+      setAmazonResults([]);
+      setAmazonSearchMessage(`Ricerca non disponibile: ${err.message}`);
     }
   }
 
   async function importAmazonProduct(item) {
+    const normalized = normalizeAmazonItem(item);
+
+    if (!normalized?.affiliate_url) {
+      alert("Prodotto non importabile: link affiliato mancante");
+      return;
+    }
+
     try {
       const offer = {
         categoria: "accessori",
         partner: "amazon",
-        titolo: item.ItemInfo?.Title?.DisplayValue || "",
-        descrizione: item.ItemInfo?.Title?.DisplayValue || "",
-        affiliate_url: item.DetailPageURL || "",
-        image_url: item.Images?.Primary?.Medium?.URL || "",
+        titolo: normalized.titolo,
+        descrizione: normalized.descrizione,
+        affiliate_url: normalized.affiliate_url,
+        image_url: normalized.image_url,
       };
 
       const res = await apiFetch(`${API_URL}/api/offers`, {
@@ -808,6 +901,105 @@ export default function Home() {
     } catch (err) {
       alert(err.message);
     }
+  }
+
+  function openNewCustomerForm() {
+    setEditingUserId(null);
+    setEditingDeviceId(null);
+    setUserForm(EMPTY_USER_FORM);
+    setNewCustomerDeviceForm(EMPTY_DEVICE_FORM);
+    setDeviceForm(EMPTY_DEVICE_FORM);
+    setCustomerDeviceMode("new");
+    setExpandedCustomerId(null);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function closeCustomerForms() {
+    setEditingUserId(null);
+    setEditingDeviceId(null);
+    setUserForm(EMPTY_USER_FORM);
+    setNewCustomerDeviceForm(EMPTY_DEVICE_FORM);
+    setDeviceForm(EMPTY_DEVICE_FORM);
+    setCustomerDeviceMode("list");
+    setNewCustomerReceiptQrAfterSave(false);
+    setDeviceReceiptQrAfterSave(false);
+  }
+
+  function toggleCustomerDetails(userId) {
+    setExpandedCustomerId((current) => current === userId ? null : userId);
+  }
+
+  function getCustomerDevices(user) {
+    return devices.filter((device) => device.user_id === user.id);
+  }
+
+  function getBroadcastCustomers() {
+    return users.filter((user) => getWhatsAppPhone(user));
+  }
+
+  function openBroadcastModal() {
+    setBroadcastMessage("Ciao, abbiamo aggiornato le offerte consigliate nella tua WebApp Smart Assistance. Aprila per vedere i prodotti selezionati per te.");
+    setBroadcastIndex(0);
+    setBroadcastModalOpen(true);
+  }
+
+  function closeBroadcastModal() {
+    setBroadcastModalOpen(false);
+    setBroadcastMessage("");
+    setBroadcastIndex(0);
+  }
+
+  async function copyBroadcastMessage() {
+    if (!broadcastMessage.trim()) {
+      alert("Messaggio vuoto");
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(broadcastMessage.trim());
+      alert("Messaggio copiato");
+    } catch (err) {
+      prompt("Copia messaggio", broadcastMessage.trim());
+    }
+  }
+
+  function openBroadcastWhatsApp(user) {
+    const phone = getWhatsAppPhone(user);
+
+    if (!phone) {
+      alert("Telefono cliente non disponibile");
+      return;
+    }
+
+    if (!broadcastMessage.trim()) {
+      alert("Scrivi un messaggio prima di inviare");
+      return;
+    }
+
+    const customers = getBroadcastCustomers();
+    const currentIndex = customers.findIndex((item) => item.id === user.id);
+
+    if (currentIndex >= 0) {
+      setBroadcastIndex(Math.min(currentIndex + 1, customers.length));
+    }
+
+    window.open(`https://wa.me/${phone}?text=${encodeURIComponent(broadcastMessage.trim())}`, "_blank");
+  }
+
+  function openNextBroadcastWhatsApp() {
+    const customers = getBroadcastCustomers();
+
+    if (customers.length === 0) {
+      alert("Nessun cliente con telefono valido");
+      return;
+    }
+
+    if (broadcastIndex >= customers.length) {
+      alert("Hai già aperto WhatsApp per tutti i clienti in lista.");
+      return;
+    }
+
+    openBroadcastWhatsApp(customers[broadcastIndex]);
   }
 
   function getCustomerAppUrl(user) {
@@ -1510,6 +1702,90 @@ export default function Home() {
           align-items: start;
         }
 
+        .customers-top-panel,
+        .customers-list-panel,
+        .customer-form-panel {
+          width: 100%;
+        }
+
+        .customers-topbar {
+          display: flex;
+          justify-content: space-between;
+          gap: 16px;
+          align-items: center;
+          flex-wrap: wrap;
+          margin-bottom: 14px;
+        }
+
+        .customers-search {
+          max-width: none;
+        }
+
+        .compact-form {
+          grid-template-columns: repeat(2, minmax(220px, 1fr));
+          align-items: end;
+        }
+
+        .compact-form .inline-info-box,
+        .compact-form .checkbox-row,
+        .compact-form .form-actions,
+        .compact-form .form-section-title {
+          grid-column: 1 / -1;
+        }
+
+        .form-section-title {
+          border-top: 1px solid #e2e8f0;
+          padding-top: 14px;
+          margin-top: 4px;
+        }
+
+        .compact-table-wrap table,
+        .customers-table {
+          min-width: 860px;
+        }
+
+        .customer-detail-row td {
+          background: #f8fafc;
+        }
+
+        .customer-detail-box {
+          display: grid;
+          grid-template-columns: minmax(260px, .9fr) 1.1fr;
+          gap: 18px;
+          padding: 14px;
+          border: 1px solid #e2e8f0;
+          border-radius: 18px;
+          background: #fff;
+        }
+
+        .customer-detail-actions {
+          margin-top: 10px;
+        }
+
+        .mini-device-list {
+          display: grid;
+          gap: 8px;
+          margin-top: 12px;
+        }
+
+        .mini-device-item {
+          display: flex;
+          justify-content: space-between;
+          gap: 12px;
+          align-items: center;
+          padding: 10px;
+          border: 1px solid #e2e8f0;
+          border-radius: 14px;
+          background: #fff;
+        }
+
+        .mini-device-item span {
+          display: block;
+          color: #64748b;
+          font-size: 12px;
+          margin-top: 3px;
+        }
+
         .panel {
           background: #fff;
           border: 1px solid #e2e8f0;
@@ -1902,8 +2178,15 @@ export default function Home() {
           }
 
           .section-grid,
-          .dashboard-grid {
+          .dashboard-grid,
+          .compact-form,
+          .customer-detail-box {
             grid-template-columns: 1fr;
+          }
+
+          .mini-device-item {
+            align-items: flex-start;
+            flex-direction: column;
           }
 
           .topbar {
@@ -2078,52 +2361,53 @@ export default function Home() {
         )}
 
         {!loading && activeSection === "customers" && (
-          <section className="section-grid">
-            <div>
-              <div className="mode-tabs">
-                <button
-                  type="button"
-                  className={`mode-button ${customerDeviceMode === "new" ? "active" : ""}`}
-                  onClick={() => {
-                    setCustomerDeviceMode("new");
-                    setEditingDeviceId(null);
-                    setDeviceForm(EMPTY_DEVICE_FORM);
-                    setDeviceReceiptQrAfterSave(false);
-                  }}
-                >
-                  Nuovo cliente
-                </button>
+          <>
+            <section className="panel customers-top-panel">
+              <div className="customers-topbar">
+                <div>
+                  <h2 className="panel-title">Clienti registrati</h2>
+                  <div className="panel-subtitle">
+                    {filteredUsers.length} clienti visualizzati. Lista pulita con dettagli apribili a richiesta.
+                  </div>
+                </div>
 
-                <button
-                  type="button"
-                  className={`mode-button ${customerDeviceMode === "device" ? "active" : ""}`}
-                  onClick={() => {
-                    setCustomerDeviceMode("device");
-                    setEditingUserId(null);
-                    setUserForm(EMPTY_USER_FORM);
-                  }}
-                >
-                  Device esistente
-                </button>
+                <div className="action-row">
+                  <button type="button" className="primary-button" onClick={openNewCustomerForm}>
+                    Nuovo cliente
+                  </button>
+
+                  <button type="button" className="soft-button" onClick={openBroadcastModal}>
+                    Invio messaggio a tutti i clienti
+                  </button>
+                </div>
               </div>
 
-              <div className="mode-help">
-                Usa "Nuovo cliente" solo per prima registrazione. Usa "Device esistente" quando il cliente è già presente.
-              </div>
+              <input
+                className="search-input customers-search"
+                placeholder="Cerca cliente per nome, telefono o mail..."
+                value={userSearch}
+                onChange={(e) => setUserSearch(e.target.value)}
+              />
+            </section>
 
-              <div className="panel" style={{ display: customerDeviceMode === "new" || editingUserId ? "block" : "none" }}>
+            {(customerDeviceMode === "new" || editingUserId) && (
+              <section className="panel customer-form-panel">
                 <div className="panel-header">
                   <div>
                     <h2 className="panel-title">
                       {editingUserId ? "Modifica cliente" : "Nuovo cliente + dispositivo"}
                     </h2>
                     <div className="panel-subtitle">
-                      Il flusso corretto è cliente + primo dispositivo. Se il cliente esiste già, aggiungi solo il dispositivo.
+                      Inserisci i dati essenziali del cliente. Il primo dispositivo è obbligatorio solo per un nuovo cliente.
                     </div>
                   </div>
+
+                  <button type="button" className="ghost-button" onClick={closeCustomerForms}>
+                    Chiudi
+                  </button>
                 </div>
 
-                <form className="form-grid" onSubmit={saveUser}>
+                <form className="form-grid compact-form" onSubmit={saveUser}>
                   <Field label="Nome">
                     <input
                       required
@@ -2157,17 +2441,9 @@ export default function Home() {
 
                   {!editingUserId && (
                     <>
-                      <div
-                        style={{
-                          marginTop: "8px",
-                          paddingTop: "14px",
-                          borderTop: "1px solid #e2e8f0",
-                        }}
-                      >
-                        <h3 style={{ margin: "0 0 4px" }}>Primo dispositivo</h3>
-                        <div className="panel-subtitle">
-                          Obbligatorio quando registri un nuovo cliente.
-                        </div>
+                      <div className="form-section-title">
+                        <div className="row-title">Primo dispositivo</div>
+                        <div className="row-subtitle">Obbligatorio quando registri un nuovo cliente.</div>
                       </div>
 
                       <Field label="Marca">
@@ -2229,23 +2505,14 @@ export default function Home() {
                         />
                       </Field>
 
-                      <div className="inline-info-box">
-                        <div>
-                          <div className="row-title">Scontrino acquisto</div>
-                          <div className="row-subtitle">
-                            Il dispositivo viene creato prima del QR. Subito dopo il salvataggio apriamo il QR per caricarlo da telefono.
-                          </div>
-                        </div>
-
-                        <label className="checkbox-row">
-                          <input
-                            type="checkbox"
-                            checked={newCustomerReceiptQrAfterSave}
-                            onChange={(e) => setNewCustomerReceiptQrAfterSave(e.target.checked)}
-                          />
-                          Genera QR telefono dopo la creazione
-                        </label>
-                      </div>
+                      <label className="checkbox-row">
+                        <input
+                          type="checkbox"
+                          checked={newCustomerReceiptQrAfterSave}
+                          onChange={(e) => setNewCustomerReceiptQrAfterSave(e.target.checked)}
+                        />
+                        Genera QR telefono dopo la creazione
+                      </label>
                     </>
                   )}
 
@@ -2253,36 +2520,29 @@ export default function Home() {
                     <button type="submit" className="primary-button">
                       {editingUserId ? "Salva cliente" : "Crea cliente + dispositivo"}
                     </button>
-
-                    {editingUserId && (
-                      <button
-                        type="button"
-                        className="ghost-button"
-                        onClick={() => {
-                          setEditingUserId(null);
-                          setUserForm(EMPTY_USER_FORM);
-                        }}
-                      >
-                        Annulla
-                      </button>
-                    )}
                   </div>
                 </form>
-              </div>
+              </section>
+            )}
 
-              <div className="panel" id="existing-device-form" style={{ display: customerDeviceMode === "device" || editingDeviceId ? "block" : "none" }}>
+            {(customerDeviceMode === "device" || editingDeviceId) && (
+              <section className="panel customer-form-panel" id="existing-device-form">
                 <div className="panel-header">
                   <div>
                     <h2 className="panel-title">
-                      {editingDeviceId ? "Modifica dispositivo" : "Aggiungi dispositivo a cliente esistente"}
+                      {editingDeviceId ? "Modifica dispositivo" : "Aggiungi dispositivo"}
                     </h2>
                     <div className="panel-subtitle">
-                      Usa questo modulo quando il cliente è già registrato.
+                      Modulo rapido per aggiungere o modificare un dispositivo cliente.
                     </div>
                   </div>
+
+                  <button type="button" className="ghost-button" onClick={closeCustomerForms}>
+                    Chiudi
+                  </button>
                 </div>
 
-                <form className="form-grid" onSubmit={saveDevice}>
+                <form className="form-grid compact-form" onSubmit={saveDevice}>
                   {!editingDeviceId && (
                     <Field label="Cliente">
                       <select
@@ -2359,17 +2619,13 @@ export default function Home() {
                     />
                   </Field>
 
-                  <div className="inline-info-box">
-                    <div>
-                      <div className="row-title">Scontrino acquisto</div>
-                      <div className="row-subtitle">
-                        {editingDeviceId
-                          ? "Gestisci subito lo scontrino del dispositivo selezionato."
-                          : "Il dispositivo viene creato prima del QR. Subito dopo il salvataggio apriamo il QR per caricarlo da telefono."}
+                  {editingDeviceId && editingDevice ? (
+                    <div className="inline-info-box">
+                      <div>
+                        <div className="row-title">Scontrino acquisto</div>
+                        <div className="row-subtitle">Gestione scontrino del dispositivo selezionato.</div>
                       </div>
-                    </div>
 
-                    {editingDeviceId && editingDevice ? (
                       <div className="action-row">
                         <button type="button" className="primary-button" onClick={() => createReceiptUploadQr(editingDevice)}>
                           QR telefono
@@ -2397,245 +2653,154 @@ export default function Home() {
                           />
                         </label>
                       </div>
-                    ) : (
-                      <label className="checkbox-row">
-                        <input
-                          type="checkbox"
-                          checked={deviceReceiptQrAfterSave}
-                          onChange={(e) => setDeviceReceiptQrAfterSave(e.target.checked)}
-                        />
-                        Genera QR telefono dopo il salvataggio
-                      </label>
-                    )}
-                  </div>
+                    </div>
+                  ) : (
+                    <label className="checkbox-row">
+                      <input
+                        type="checkbox"
+                        checked={deviceReceiptQrAfterSave}
+                        onChange={(e) => setDeviceReceiptQrAfterSave(e.target.checked)}
+                      />
+                      Genera QR telefono dopo il salvataggio
+                    </label>
+                  )}
 
                   <div className="form-actions">
                     <button type="submit" className="primary-button">
                       {editingDeviceId ? "Salva dispositivo" : "Aggiungi dispositivo"}
                     </button>
-
-                    {(editingDeviceId || deviceForm.user_id) && (
-                      <button
-                        type="button"
-                        className="ghost-button"
-                        onClick={() => {
-                          setEditingDeviceId(null);
-                          setDeviceForm(EMPTY_DEVICE_FORM);
-                          setDeviceReceiptQrAfterSave(false);
-                        }}
-                      >
-                        Annulla
-                      </button>
-                    )}
                   </div>
                 </form>
-              </div>
-            </div>
+              </section>
+            )}
 
-            <div>
-              <div className="panel">
-                <div className="toolbar">
-                  <div>
-                    <h2 className="panel-title">Clienti registrati</h2>
-                    <div className="panel-subtitle">
-                      {filteredUsers.length} clienti visualizzati.
-                    </div>
-                  </div>
-
-                  <input
-                    className="search-input"
-                    placeholder="Cerca cliente..."
-                    value={userSearch}
-                    onChange={(e) => setUserSearch(e.target.value)}
-                  />
-                </div>
-
-                <div className="table-wrap">
-                  <table>
-                    <thead>
+            <section className="panel customers-list-panel">
+              <div className="table-wrap compact-table-wrap">
+                <table className="customers-table">
+                  <thead>
+                    <tr>
+                      <th>Nome e cognome</th>
+                      <th>Telefono</th>
+                      <th>Email</th>
+                      <th>Dettagli</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredUsers.length === 0 ? (
                       <tr>
-                        <th>Cliente</th>
-                        <th>Contatti</th>
-                        <th>WebApp e contatto</th>
-                        <th>Azioni</th>
+                        <td colSpan="4">Nessun cliente trovato.</td>
                       </tr>
-                    </thead>
-                    <tbody>
-                      {filteredUsers.length === 0 ? (
-                        <tr>
-                          <td colSpan="4">Nessun cliente trovato.</td>
-                        </tr>
-                      ) : (
-                        filteredUsers.map((user) => (
-                          <tr key={user.id}>
-                            <td>
-                              <div className="row-title">
-                                {user.nome} {user.cognome}
-                              </div>
-                              <div className="row-subtitle">
-                                {user.customer_code || "-"}
-                              </div>
-                            </td>
-                            <td>
-                              <div>{user.email || "-"}</div>
-                              <div className="row-subtitle">{user.telefono || "-"}</div>
-                            </td>
-                            <td>
-                              {user.app_token ? (
-                                <>
-                                  <div className="action-row">
-                                    <button type="button" className="small-button" onClick={() => openCustomerApp(user)}>
-                                      Apri
-                                    </button>
-                                    <button type="button" className="small-button" onClick={() => copyCustomerAppUrl(user)}>
-                                      Copia link
-                                    </button>
-                                    <button type="button" className="small-button" onClick={() => openCustomerQr(user)}>
-                                      QR
-                                    </button>
+                    ) : (
+                      filteredUsers.map((user) => {
+                        const expanded = expandedCustomerId === user.id;
+                        const customerDevices = getCustomerDevices(user);
+
+                        return (
+                          <React.Fragment key={user.id}>
+                            <tr>
+                              <td>
+                                <div className="row-title">{user.nome} {user.cognome}</div>
+                                <div className="row-subtitle">{user.customer_code || "-"}</div>
+                              </td>
+                              <td>{user.telefono || "-"}</td>
+                              <td>{user.email || "-"}</td>
+                              <td>
+                                <button type="button" className="soft-button" onClick={() => toggleCustomerDetails(user.id)}>
+                                  {expanded ? "Chiudi" : "Dettagli"}
+                                </button>
+                              </td>
+                            </tr>
+
+                            {expanded && (
+                              <tr className="customer-detail-row">
+                                <td colSpan="4">
+                                  <div className="customer-detail-box">
+                                    <div>
+                                      <div className="row-title">WebApp e contatti</div>
+                                      <div className="action-row customer-detail-actions">
+                                        {user.app_token ? (
+                                          <>
+                                            <button type="button" className="small-button" onClick={() => openCustomerApp(user)}>
+                                              Apri WebApp
+                                            </button>
+                                            <button type="button" className="small-button" onClick={() => copyCustomerAppUrl(user)}>
+                                              Copia link
+                                            </button>
+                                            <button type="button" className="small-button" onClick={() => openCustomerQr(user)}>
+                                              QR
+                                            </button>
+                                            <button type="button" className="small-button" onClick={() => openCustomerWhatsApp(user)}>
+                                              WhatsApp
+                                            </button>
+                                            <button type="button" className="small-button" onClick={() => openCustomWhatsAppModal(user)}>
+                                              Msg libero
+                                            </button>
+                                            <button type="button" className="small-button" onClick={() => copyCustomerOnboardingMessage(user)}>
+                                              Copia msg
+                                            </button>
+                                          </>
+                                        ) : (
+                                          <span className="badge badge-red">Token assente</span>
+                                        )}
+                                      </div>
+                                    </div>
+
+                                    <div>
+                                      <div className="row-title">Dispositivi</div>
+                                      <div className="row-subtitle" style={{ marginBottom: "8px" }}>
+                                        {customerDevices.length} dispositivi registrati.
+                                      </div>
+                                      <div className="action-row customer-detail-actions">
+                                        <button type="button" className="soft-button" onClick={() => startAddDeviceForCustomer(user)}>
+                                          Aggiungi device
+                                        </button>
+                                        <button type="button" className="soft-button" onClick={() => editUser(user)}>
+                                          Modifica cliente
+                                        </button>
+                                        <button type="button" className="danger-button" onClick={() => deleteUser(user.id)}>
+                                          Elimina cliente
+                                        </button>
+                                      </div>
+
+                                      {customerDevices.length > 0 && (
+                                        <div className="mini-device-list">
+                                          {customerDevices.map((device) => (
+                                            <div key={device.id} className="mini-device-item">
+                                              <div>
+                                                <strong>{device.marca} {device.modello}</strong>
+                                                <span>{device.categoria || "-"} · Garanzia {formatDate(device.scadenza_garanzia)}</span>
+                                              </div>
+                                              <div className="action-row">
+                                                <button type="button" className="small-button" onClick={() => editDevice(device)}>
+                                                  Modifica
+                                                </button>
+                                                <button type="button" className="primary-button" onClick={() => createReceiptUploadQr(device)}>
+                                                  QR scontrino
+                                                </button>
+                                                {device.receipt_data_url && (
+                                                  <button type="button" className="small-button" onClick={() => openDeviceReceipt(device)}>
+                                                    Apri scontrino
+                                                  </button>
+                                                )}
+                                              </div>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      )}
+                                    </div>
                                   </div>
-
-                                  <div className="action-row" style={{ marginTop: "8px" }}>
-                                    <button type="button" className="small-button" onClick={() => openCustomerWhatsApp(user)}>
-                                      WhatsApp
-                                    </button>
-                                    <button type="button" className="small-button" onClick={() => openCustomWhatsAppModal(user)}>
-                                      Msg libero
-                                    </button>
-                                    <button type="button" className="small-button" onClick={() => copyCustomerOnboardingMessage(user)}>
-                                      Copia msg
-                                    </button>
-                                  </div>
-                                </>
-                              ) : (
-                                <span className="badge badge-red">Token assente</span>
-                              )}
-                            </td>
-                            <td>
-                              <div className="action-row">
-                                <button type="button" className="soft-button" onClick={() => startAddDeviceForCustomer(user)}>
-                                  Aggiungi device
-                                </button>
-                                <button type="button" className="soft-button" onClick={() => editUser(user)}>
-                                  Modifica
-                                </button>
-                                <button type="button" className="danger-button" onClick={() => deleteUser(user.id)}>
-                                  Elimina
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
+                                </td>
+                              </tr>
+                            )}
+                          </React.Fragment>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
               </div>
-
-              <div className="panel">
-                <div className="toolbar">
-                  <div>
-                    <h2 className="panel-title">Archivio dispositivi</h2>
-                    <div className="panel-subtitle">
-                      Consultazione rapida: {filteredDevices.length} dispositivi.
-                    </div>
-                  </div>
-
-                  <input
-                    className="search-input"
-                    placeholder="Cerca dispositivo..."
-                    value={deviceSearch}
-                    onChange={(e) => setDeviceSearch(e.target.value)}
-                  />
-                </div>
-
-                <div className="table-wrap">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Cliente</th>
-                        <th>Dispositivo</th>
-                        <th>Garanzia</th>
-                        <th>Scontrino</th>
-                        <th>Note</th>
-                        <th>Azioni</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredDevices.length === 0 ? (
-                        <tr>
-                          <td colSpan="6">Nessun dispositivo trovato.</td>
-                        </tr>
-                      ) : (
-                        filteredDevices.map((device) => (
-                          <tr key={device.id}>
-                            <td>
-                              <div className="row-title">{device.nome} {device.cognome}</div>
-                              <div className="row-subtitle">{device.customer_code || "-"}</div>
-                            </td>
-                            <td>
-                              <div className="row-title">{device.marca} {device.modello}</div>
-                              <div className="row-subtitle">{device.categoria || "-"}</div>
-                            </td>
-                            <td>
-                              <span className={getWarrantyClass(device.scadenza_garanzia)}>
-                                {formatDate(device.scadenza_garanzia)}
-                              </span>
-                            </td>
-                            <td>
-                              <div className="action-row">
-                                {device.receipt_data_url && (
-                                  <>
-                                    <button type="button" className="small-button" onClick={() => openDeviceReceipt(device)}>
-                                      Apri
-                                    </button>
-                                    <button type="button" className="danger-button" onClick={() => deleteDeviceReceipt(device)}>
-                                      Rimuovi
-                                    </button>
-                                  </>
-                                )}
-
-                                <label className="small-button" style={{ cursor: "pointer" }}>
-                                  {device.receipt_data_url ? "Sostituisci" : "Carica da PC"}
-                                  <input
-                                    type="file"
-                                    accept="application/pdf,image/jpeg,image/png,image/webp"
-                                    style={{ display: "none" }}
-                                    onChange={(event) => uploadDeviceReceipt(device, event)}
-                                  />
-                                </label>
-
-                                <button type="button" className="primary-button" onClick={() => createReceiptUploadQr(device)}>
-                                  QR telefono
-                                </button>
-                              </div>
-
-                              {device.receipt_uploaded_at && (
-                                <div className="row-subtitle">
-                                  Caricato il {formatDate(device.receipt_uploaded_at)}
-                                </div>
-                              )}
-                            </td>
-                            <td>{device.note || "-"}</td>
-                            <td>
-                              <div className="action-row">
-                                <button type="button" className="soft-button" onClick={() => editDevice(device)}>
-                                  Modifica
-                                </button>
-                                <button type="button" className="danger-button" onClick={() => deleteDevice(device.id)}>
-                                  Elimina
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-          </section>
+            </section>
+          </>
         )}
 
         {!loading && activeSection === "devices" && (
@@ -3018,15 +3183,21 @@ export default function Home() {
                     </button>
                   </div>
 
+                  {amazonSearchMessage && (
+                    <div className="panel-subtitle" style={{ marginBottom: "12px" }}>
+                      {amazonSearchMessage}
+                    </div>
+                  )}
+
                   {amazonResults.length > 0 && (
                     <div className="amazon-grid">
                       {amazonResults.map((item, index) => (
-                        <article key={item.ASIN || index} className="product-card">
-                          {item.Images?.Primary?.Medium?.URL && (
-                            <img src={item.Images.Primary.Medium.URL} alt={item.ItemInfo?.Title?.DisplayValue || "Prodotto"} />
+                        <article key={item.asin || item.affiliate_url || index} className="product-card">
+                          {item.image_url && (
+                            <img src={item.image_url} alt={item.titolo || "Prodotto"} />
                           )}
                           <div className="row-title">
-                            {item.ItemInfo?.Title?.DisplayValue || "Prodotto Amazon"}
+                            {item.titolo || "Prodotto Amazon"}
                           </div>
                           <button type="button" className="soft-button" onClick={() => importAmazonProduct(item)}>
                             Importa
@@ -3321,6 +3492,93 @@ export default function Home() {
               </div>
             </section>
           </>
+        )}
+
+        {broadcastModalOpen && (
+          <div className="qr-backdrop" onClick={closeBroadcastModal}>
+            <div className="qr-modal" onClick={(e) => e.stopPropagation()}>
+              <div className="panel-header">
+                <div>
+                  <h2 className="panel-title">Broadcast WhatsApp clienti</h2>
+                  <div className="panel-subtitle">
+                    Invio guidato tramite WhatsApp: il sistema apre WhatsApp per ogni cliente, poi confermi l'invio dall'app.
+                  </div>
+                </div>
+
+                <button type="button" className="ghost-button" onClick={closeBroadcastModal}>
+                  Chiudi
+                </button>
+              </div>
+
+              <textarea
+                value={broadcastMessage}
+                onChange={(e) => setBroadcastMessage(e.target.value)}
+                rows={5}
+                placeholder="Scrivi il messaggio..."
+              />
+
+              <div className="inline-info-box" style={{ marginTop: "12px" }}>
+                <div>
+                  <div className="row-title">
+                    {getBroadcastCustomers().length > 0
+                      ? `Clienti con WhatsApp: ${getBroadcastCustomers().length}`
+                      : "Nessun cliente con telefono valido"}
+                  </div>
+                  <div className="row-subtitle">
+                    {broadcastIndex < getBroadcastCustomers().length
+                      ? `Prossimo: ${getBroadcastCustomers()[broadcastIndex]?.nome || ""} ${getBroadcastCustomers()[broadcastIndex]?.cognome || ""} (${broadcastIndex + 1}/${getBroadcastCustomers().length})`
+                      : getBroadcastCustomers().length > 0
+                        ? "Hai aperto WhatsApp per tutti i clienti in lista."
+                        : "Aggiungi un numero di telefono ai clienti per usare questa funzione."}
+                  </div>
+                </div>
+
+                <div className="action-row">
+                  <button type="button" className="primary-button" onClick={openNextBroadcastWhatsApp}>
+                    Invia al prossimo cliente
+                  </button>
+                  <button type="button" className="soft-button" onClick={copyBroadcastMessage}>
+                    Copia testo
+                  </button>
+                </div>
+              </div>
+
+              <div className="table-wrap" style={{ marginTop: "14px", maxHeight: "420px", overflow: "auto" }}>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Cliente</th>
+                      <th>Telefono</th>
+                      <th>Invio</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {getBroadcastCustomers().length === 0 ? (
+                      <tr>
+                        <td colSpan="3">Nessun cliente con telefono valido.</td>
+                      </tr>
+                    ) : (
+                      getBroadcastCustomers().map((user) => (
+                        <tr key={user.id}>
+                          <td>{user.nome} {user.cognome}</td>
+                          <td>{user.telefono}</td>
+                          <td>
+                            <button type="button" className="primary-button" onClick={() => openBroadcastWhatsApp(user)}>
+                              Invia su WhatsApp
+                            </button>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="panel-subtitle" style={{ marginTop: "12px" }}>
+                Nota: questo non è invio automatico massivo. Per un broadcast automatico vero serve integrazione WhatsApp API/WAHA dedicata con consenso e regole anti-spam.
+              </div>
+            </div>
+          </div>
         )}
 
         {qrModalUser && (

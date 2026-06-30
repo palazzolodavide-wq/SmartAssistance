@@ -14,6 +14,7 @@ export default function CustomerPage() {
     device: null,
     devices: [],
     recommendedOffers: [],
+    manualOffers: [],
     trendingOffers: [],
   });
 
@@ -29,7 +30,9 @@ export default function CustomerPage() {
         setLoading(true);
         setError("");
 
-        const res = await fetch(`/api/app/${token}`);
+        const res = await fetch(`/api/app/${token}?v=${Date.now()}`, {
+          cache: "no-store",
+        });
         const json = await res.json();
 
         if (!res.ok || json.success === false) {
@@ -41,6 +44,7 @@ export default function CustomerPage() {
           device: json.device || json.devices?.[0] || null,
           devices: json.devices || [],
           recommendedOffers: json.recommendedOffers || [],
+          manualOffers: json.manualOffers || [],
           trendingOffers: json.trendingOffers || [],
         });
       } catch (err) {
@@ -124,6 +128,7 @@ export default function CustomerPage() {
 
   const allOffers = useMemo(() => {
     const merged = [
+      ...(data.manualOffers || []),
       ...(data.recommendedOffers || []),
       ...(data.trendingOffers || []),
     ];
@@ -135,7 +140,17 @@ export default function CustomerPage() {
           .map((offer, index) => [offer.asin || offer.affiliate_url || index, offer])
       ).values(),
     ];
-  }, [data.recommendedOffers, data.trendingOffers]);
+  }, [data.manualOffers, data.recommendedOffers, data.trendingOffers]);
+
+  const homeDeviceOffers = useMemo(() => {
+    return (data.recommendedOffers || [])
+      .filter((offer) =>
+        offer?.affiliate_url &&
+        offer?.source !== "manual" &&
+        offer?.tipo_offerta !== "manual"
+      )
+      .slice(0, 4);
+  }, [data.recommendedOffers]);
 
   function trackOfferClick(offer, source = "webapp") {
     if (!token || !offer?.affiliate_url) return;
@@ -449,6 +464,34 @@ export default function CustomerPage() {
     );
   }
 
+  function getOfferBadge(offer, compact = false) {
+    if (offer?.source === "manual") {
+      return "Scelto da Smart Assistance";
+    }
+
+    if (offer?.source === "amazon_recommended" || offer?.tipo_offerta === "accessory") {
+      return "Compatibile con il tuo dispositivo";
+    }
+
+    if (compact) {
+      return "Offerta in evidenza";
+    }
+
+    return "Prodotto consigliato";
+  }
+
+  function getOfferClickSource(offer, compact = false) {
+    if (offer?.source === "manual") {
+      return "manual_offer";
+    }
+
+    if (offer?.source === "amazon_recommended") {
+      return "amazon_recommended";
+    }
+
+    return compact ? "trending" : "recommended";
+  }
+
   function OfferCard({ offer, compact = false }) {
     return (
       <div style={styles.lightCard}>
@@ -500,12 +543,18 @@ export default function CustomerPage() {
             marginBottom: "10px",
           }}
         >
-          Compatibile con il tuo dispositivo
+          {getOfferBadge(offer, compact)}
         </div>
 
         <h3 style={{ margin: "0 0 10px", fontSize: "17px", lineHeight: 1.25 }}>
           {offer.titolo || "Prodotto consigliato"}
         </h3>
+
+        {(offer.partner || offer.categoria) && (
+          <div style={{ color: "#64748b", fontSize: "13px", marginBottom: "12px", fontWeight: "bold" }}>
+            {[offer.partner, offer.categoria].filter(Boolean).join(" · ")}
+          </div>
+        )}
 
         <div style={{ display: "flex", alignItems: "baseline", gap: "10px", marginBottom: "14px" }}>
           {offer.prezzo && (
@@ -523,7 +572,7 @@ export default function CustomerPage() {
 
         <button
           style={styles.cta}
-          onClick={() => openAffiliateLink(offer, compact ? "trending" : "recommended")}
+          onClick={() => openAffiliateLink(offer, getOfferClickSource(offer, compact))}
         >
           Scopri →
         </button>
@@ -631,10 +680,10 @@ export default function CustomerPage() {
               )}
             </section>
 
-            {data.recommendedOffers?.length > 0 && (
+            {homeDeviceOffers.length > 0 && (
               <>
                 <h2 style={styles.sectionTitle}>🎁 Consigliati per il tuo dispositivo</h2>
-                {data.recommendedOffers.slice(0, 4).map((offer, index) => (
+                {homeDeviceOffers.map((offer, index) => (
                   <OfferCard key={offer.asin || offer.affiliate_url || index} offer={offer} />
                 ))}
               </>
