@@ -48,6 +48,7 @@ const EMPTY_USER_FORM = {
   cognome: "",
   email: "",
   telefono: "",
+  broadcast_opt_out: false,
 };
 
 const EMPTY_DEVICE_FORM = {
@@ -455,6 +456,7 @@ export default function Home() {
       cognome: user.cognome || "",
       email: user.email || "",
       telefono: user.telefono || "",
+      broadcast_opt_out: Boolean(user.broadcast_opt_out),
     });
 
     setDeviceReceiptQrAfterSave(false);
@@ -947,8 +949,50 @@ export default function Home() {
     return devices.filter((device) => device.user_id === user.id);
   }
 
+  async function toggleBroadcastOptOut(user) {
+    const nextValue = !user.broadcast_opt_out;
+    const label = nextValue
+      ? "escludere dai broadcast"
+      : "includere di nuovo nei broadcast";
+
+    if (!confirm(`Vuoi ${label} ${user.nome || ""} ${user.cognome || ""}?`)) {
+      return;
+    }
+
+    try {
+      const res = await apiFetch(`${API_URL}/api/users/${user.id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          nome: user.nome || "",
+          cognome: user.cognome || "",
+          email: user.email || "",
+          telefono: user.telefono || "",
+          broadcast_opt_out: nextValue,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!data.success) {
+        alert(data.error || "Errore aggiornamento cliente");
+        return;
+      }
+
+      await loadData();
+      alert(nextValue ? "Cliente escluso dai broadcast" : "Cliente reincluso nei broadcast");
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
   function getBroadcastCustomers() {
-    return users.filter((user) => getWhatsAppPhone(user));
+    return users.filter((user) =>
+      getWhatsAppPhone(user) &&
+      !user.broadcast_opt_out
+    );
   }
 
   function openBroadcastModal() {
@@ -2514,6 +2558,15 @@ export default function Home() {
                     />
                   </Field>
 
+                  <label className="checkbox-row">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(userForm.broadcast_opt_out)}
+                      onChange={(e) => setUserForm({ ...userForm, broadcast_opt_out: e.target.checked })}
+                    />
+                    Non includere questo cliente nei broadcast WhatsApp
+                  </label>
+
                   {!editingUserId && (
                     <>
                       <div className="form-section-title">
@@ -2775,7 +2828,14 @@ export default function Home() {
                             <tr>
                               <td>
                                 <div className="row-title">{user.nome} {user.cognome}</div>
-                                <div className="row-subtitle">{user.customer_code || "-"}</div>
+                                <div className="row-subtitle">
+                                  {user.customer_code || "-"}
+                                  {user.broadcast_opt_out && (
+                                    <span className="badge badge-orange" style={{ marginLeft: "8px" }}>
+                                      No broadcast
+                                    </span>
+                                  )}
+                                </div>
                               </td>
                               <td>{user.telefono || "-"}</td>
                               <td>{user.email || "-"}</td>
@@ -2817,6 +2877,25 @@ export default function Home() {
                                         ) : (
                                           <span className="badge badge-red">Token assente</span>
                                         )}
+                                      </div>
+
+                                      <div className="inline-info-box" style={{ marginTop: "12px" }}>
+                                        <div>
+                                          <div className="row-title">Broadcast WhatsApp</div>
+                                          <div className="row-subtitle">
+                                            {user.broadcast_opt_out
+                                              ? "Questo cliente è escluso dai messaggi broadcast automatici."
+                                              : "Questo cliente riceve i messaggi broadcast automatici."}
+                                          </div>
+                                        </div>
+
+                                        <button
+                                          type="button"
+                                          className={user.broadcast_opt_out ? "primary-button" : "danger-button"}
+                                          onClick={() => toggleBroadcastOptOut(user)}
+                                        >
+                                          {user.broadcast_opt_out ? "Includi nei broadcast" : "Non includere nei broadcast"}
+                                        </button>
                                       </div>
                                     </div>
 
@@ -3596,15 +3675,15 @@ export default function Home() {
                 <div>
                   <div className="row-title">
                     {getBroadcastCustomers().length > 0
-                      ? `Clienti con WhatsApp: ${getBroadcastCustomers().length}`
-                      : "Nessun cliente con telefono valido"}
+                      ? `Clienti inclusi nel broadcast: ${getBroadcastCustomers().length}`
+                      : "Nessun cliente valido o tutti esclusi dai broadcast"}
                   </div>
                   <div className="row-subtitle">
                     {broadcastIndex < getBroadcastCustomers().length
                       ? `Prossimo: ${getBroadcastCustomers()[broadcastIndex]?.nome || ""} ${getBroadcastCustomers()[broadcastIndex]?.cognome || ""} (${broadcastIndex + 1}/${getBroadcastCustomers().length})`
                       : getBroadcastCustomers().length > 0
                         ? "Hai aperto WhatsApp per tutti i clienti in lista."
-                        : "Aggiungi un numero di telefono ai clienti per usare questa funzione."}
+                        : "Aggiungi un numero di telefono o reincludi almeno un cliente nei broadcast."}
                   </div>
                 </div>
 
@@ -3667,7 +3746,7 @@ export default function Home() {
                   <tbody>
                     {getBroadcastCustomers().length === 0 ? (
                       <tr>
-                        <td colSpan="3">Nessun cliente con telefono valido.</td>
+                        <td colSpan="3">Nessun cliente valido o tutti esclusi dai broadcast.</td>
                       </tr>
                     ) : (
                       getBroadcastCustomers().map((user) => (

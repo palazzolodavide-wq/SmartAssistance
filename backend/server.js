@@ -277,7 +277,8 @@ app.get("/api/users", async (req, res) => {
         email,
         telefono,
         role,
-        app_token
+        app_token,
+        COALESCE(broadcast_opt_out, false) AS broadcast_opt_out
       FROM users
       ORDER BY created_at DESC
     `);
@@ -294,7 +295,8 @@ app.post("/api/users", async (req, res) => {
       nome,
       cognome,
       email,
-      telefono
+      telefono,
+      broadcast_opt_out = false
     } = req.body;
 
     const countResult = await pool.query(
@@ -320,7 +322,8 @@ app.post("/api/users", async (req, res) => {
         telefono,
         password_hash,
         consenso_privacy,
-        app_token
+        app_token,
+        broadcast_opt_out
       )
       VALUES (
         $1,
@@ -331,7 +334,8 @@ app.post("/api/users", async (req, res) => {
         $5,
         'changeme',
         true,
-        $6
+        $6,
+        $7
       )
       RETURNING *
       `,
@@ -341,7 +345,8 @@ app.post("/api/users", async (req, res) => {
         cognome,
         email,
         telefono,
-        appToken
+        appToken,
+        Boolean(broadcast_opt_out)
       ]
     );
 
@@ -375,7 +380,8 @@ app.put("/api/users/:id", async (req, res) => {
       nome,
       cognome,
       email,
-      telefono
+      telefono,
+      broadcast_opt_out = false
     } = req.body;
 
     const result = await pool.query(
@@ -385,8 +391,9 @@ app.put("/api/users/:id", async (req, res) => {
         nome = $1,
         cognome = $2,
         email = $3,
-        telefono = $4
-      WHERE id = $5
+        telefono = $4,
+        broadcast_opt_out = $5
+      WHERE id = $6
       RETURNING *
       `,
       [
@@ -394,6 +401,7 @@ app.put("/api/users/:id", async (req, res) => {
         cognome,
         email,
         telefono,
+        Boolean(broadcast_opt_out),
         id
       ]
     );
@@ -899,6 +907,7 @@ app.post("/api/broadcast/whatsapp", async (req, res) => {
       WHERE role = 'customer'
         AND telefono IS NOT NULL
         AND TRIM(telefono) <> ''
+        AND COALESCE(broadcast_opt_out, false) = false
     `;
 
     if (Array.isArray(customer_ids) && customer_ids.length > 0) {
@@ -915,7 +924,8 @@ app.post("/api/broadcast/whatsapp", async (req, res) => {
         customer_code,
         nome,
         cognome,
-        telefono
+        telefono,
+        COALESCE(broadcast_opt_out, false) AS broadcast_opt_out
       FROM users
       ${whereClause}
       ORDER BY created_at DESC
