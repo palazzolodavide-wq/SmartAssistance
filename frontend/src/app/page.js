@@ -125,6 +125,8 @@ export default function Home() {
   const [broadcastModalOpen, setBroadcastModalOpen] = useState(false);
   const [broadcastMessage, setBroadcastMessage] = useState("");
   const [broadcastIndex, setBroadcastIndex] = useState(0);
+  const [broadcastSending, setBroadcastSending] = useState(false);
+  const [broadcastResult, setBroadcastResult] = useState(null);
   const [expandedCustomerId, setExpandedCustomerId] = useState(null);
   const [customerDeviceMode, setCustomerDeviceMode] = useState("list");
   const [newCustomerReceiptQrAfterSave, setNewCustomerReceiptQrAfterSave] = useState(false);
@@ -940,6 +942,7 @@ export default function Home() {
   function openBroadcastModal() {
     setBroadcastMessage("Ciao, abbiamo aggiornato le offerte consigliate nella tua WebApp Smart Assistance. Aprila per vedere i prodotti selezionati per te.");
     setBroadcastIndex(0);
+    setBroadcastResult(null);
     setBroadcastModalOpen(true);
   }
 
@@ -947,6 +950,8 @@ export default function Home() {
     setBroadcastModalOpen(false);
     setBroadcastMessage("");
     setBroadcastIndex(0);
+    setBroadcastSending(false);
+    setBroadcastResult(null);
   }
 
   async function copyBroadcastMessage() {
@@ -984,6 +989,63 @@ export default function Home() {
     }
 
     window.open(`https://wa.me/${phone}?text=${encodeURIComponent(broadcastMessage.trim())}`, "_blank");
+  }
+
+  async function sendAutomaticBroadcast() {
+    const customers = getBroadcastCustomers();
+
+    if (customers.length === 0) {
+      alert("Nessun cliente con telefono valido");
+      return;
+    }
+
+    if (!broadcastMessage.trim()) {
+      alert("Scrivi un messaggio prima di inviare");
+      return;
+    }
+
+    const confirmed = confirm(
+      `Inviare il messaggio via WhatsApp a ${customers.length} clienti?`
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      setBroadcastSending(true);
+      setBroadcastResult(null);
+
+      const res = await apiFetch(`${API_URL}/api/broadcast/whatsapp`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          message: broadcastMessage.trim(),
+          customer_ids: customers.map((user) => user.id)
+        })
+      });
+
+      const data = await res.json();
+
+      if (!data.success) {
+        alert(data.error || "Errore broadcast WhatsApp");
+        setBroadcastResult(data);
+        return;
+      }
+
+      setBroadcastResult(data);
+      alert(`Broadcast completato. Inviati: ${data.sent_count}. Errori: ${data.failed_count}.`);
+    } catch (err) {
+      setBroadcastResult({
+        success: false,
+        error: err.message
+      });
+      alert(err.message);
+    } finally {
+      setBroadcastSending(false);
+    }
   }
 
   function openNextBroadcastWhatsApp() {
@@ -3534,7 +3596,16 @@ export default function Home() {
                 </div>
 
                 <div className="action-row">
-                  <button type="button" className="primary-button" onClick={openNextBroadcastWhatsApp}>
+                  <button
+                    type="button"
+                    className="primary-button"
+                    onClick={sendAutomaticBroadcast}
+                    disabled={broadcastSending}
+                    style={{ opacity: broadcastSending ? 0.65 : 1 }}
+                  >
+                    {broadcastSending ? "Invio in corso..." : "Invia broadcast automatico"}
+                  </button>
+                  <button type="button" className="soft-button" onClick={openNextBroadcastWhatsApp}>
                     Invia al prossimo cliente
                   </button>
                   <button type="button" className="soft-button" onClick={copyBroadcastMessage}>
@@ -3542,6 +3613,21 @@ export default function Home() {
                   </button>
                 </div>
               </div>
+
+              {broadcastResult && (
+                <div className="inline-info-box" style={{ marginTop: "12px" }}>
+                  <div>
+                    <div className="row-title">
+                      {broadcastResult.success ? "Risultato broadcast" : "Errore broadcast"}
+                    </div>
+                    <div className="row-subtitle">
+                      {broadcastResult.success
+                        ? `Inviati: ${broadcastResult.sent_count || 0} · Errori: ${broadcastResult.failed_count || 0} · Saltati: ${broadcastResult.skipped_count || 0}`
+                        : (broadcastResult.error || "Errore non specificato")}
+                    </div>
+                  </div>
+                </div>
+              )}
 
               <div className="table-wrap" style={{ marginTop: "14px", maxHeight: "420px", overflow: "auto" }}>
                 <table>
@@ -3575,7 +3661,7 @@ export default function Home() {
               </div>
 
               <div className="panel-subtitle" style={{ marginTop: "12px" }}>
-                Nota: questo non è invio automatico massivo. Per un broadcast automatico vero serve integrazione WhatsApp API/WAHA dedicata con consenso e regole anti-spam.
+                Nota: il broadcast automatico usa WAHA se configurato nel backend. In alternativa puoi usare l'invio guidato cliente per cliente.
               </div>
             </div>
           </div>

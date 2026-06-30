@@ -169,6 +169,95 @@ function authenticateAdmin(req, res, next) {
 }
 
 
+function normalizeWhatsAppChatId(phone) {
+  const raw = String(phone || "").replace(/\D/g, "");
+
+  if (!raw) {
+    return "";
+  }
+
+  let normalized = raw;
+
+  if (normalized.startsWith("0039")) {
+    normalized = normalized.substring(4);
+  }
+
+  if (!normalized.startsWith("39")) {
+    normalized = `39${normalized}`;
+  }
+
+  return `${normalized}@c.us`;
+}
+
+function getWahaConfig() {
+  return {
+    baseUrl: (process.env.WAHA_BASE_URL || "http://host.docker.internal:3000").replace(/\/+$/, ""),
+    apiKey: process.env.WAHA_API_KEY || "",
+    session: process.env.WAHA_SESSION || "default",
+    sendTextPath: process.env.WAHA_SEND_TEXT_PATH || "/api/sendText"
+  };
+}
+
+async function sendWahaTextMessage({ chatId, text }) {
+  const config = getWahaConfig();
+
+  if (!config.apiKey) {
+    throw new Error("WAHA_API_KEY non configurata nel backend");
+  }
+
+  const payload = {
+    session: config.session,
+    chatId,
+    text
+  };
+
+  const headers = {
+    "Content-Type": "application/json",
+    "X-Api-Key": config.apiKey
+  };
+
+  const pathsToTry = [
+    config.sendTextPath,
+    "/api/sendText",
+    "/api/send-text"
+  ].filter((value, index, array) => value && array.indexOf(value) === index);
+
+  let lastError = "";
+
+  for (const path of pathsToTry) {
+    const url = `${config.baseUrl}${path.startsWith("/") ? path : `/${path}`}`;
+
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(payload)
+      });
+
+      const bodyText = await response.text();
+
+      if (response.ok) {
+        return {
+          success: true,
+          endpoint: url,
+          response: bodyText
+        };
+      }
+
+      lastError = `HTTP ${response.status}: ${bodyText || response.statusText}`;
+
+      if (response.status !== 404) {
+        break;
+      }
+    } catch (err) {
+      lastError = err.message;
+    }
+  }
+
+  throw new Error(lastError || "Errore invio WAHA");
+}
+
+
 app.use("/api", authenticateAdmin);
 
 /*
@@ -776,6 +865,118 @@ app.get("/api/stats/clicks", async (req, res) => {
     });
   }
 });
+
+/*
+|--------------------------------------------------------------------------
+| WHATSAPP BROADCAST - WAHA
+|--------------------------------------------------------------------------
+*/
+
+app.post("/api/broadcast/whatsapp", async (req, res) => {
+  try {
+    const { message, customer_ids } = req.body;
+
+    const cleanMessage = String(message || "").trim();
+
+    if (!cleanMessage) {
+      return res.status(400).json({
+        success: false,
+        error: "Messaggio mancante"
+      });
+    }
+
+    if (cleanMessage.length > 1800) {
+      return res.status(400).json({
+        success: false,
+        error: "Messaggio troppo lungo. Limite massimo: 1800 caratteri."
+      });
+    }
+
+    const params = [];
+    let whereClause = `
+      WHERE role = 'customer'
+        AND telefono IS NOT NULL
+        AND TRIM(telefono) <> ''
+    `;
+
+    if (Array.isArray(customer_ids) && customer_ids.length > 0) {
+      params.push(customer_ids);
+      whereClause += `
+        AND id = ANY($1::uuid[])
+      `;
+    }
+
+    const customersResult = await pool.query(
+      `
+      SELECT
+        id,
+        customer_code,
+        nome,
+        cognome,
+        telefono
+      FROM users
+      ${whereClause}
+      ORDER BY created_at DESC
+      `,
+      params
+    );
+
+    const customers = customersResult.rows;
+    const sent = [];
+    const failed = [];
+    const skipped = [];
+
+    for (const customer of customers) {
+      const chatId = normalizeWhatsAppChatId(customer.telefono);
+
+      if (!chatId) {
+        skipped.push({
+          customer,
+          reason: "Telefono non valido"
+        });
+        continue;
+      }
+
+      try {
+        const result = await sendWahaTextMessage({
+          chatId,
+          text: cleanMessage
+        });
+
+        sent.push({
+          customer,
+          chatId,
+          endpoint: result.endpoint
+        });
+
+        await new Promise((resolve) => setTimeout(resolve, 850));
+      } catch (err) {
+        failed.push({
+          customer,
+          chatId,
+          error: err.message
+        });
+      }
+    }
+
+    res.json({
+      success: true,
+      total: customers.length,
+      sent_count: sent.length,
+      failed_count: failed.length,
+      skipped_count: skipped.length,
+      sent,
+      failed,
+      skipped
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      error: err.message
+    });
+  }
+});
+
 
 /*
 |--------------------------------------------------------------------------
