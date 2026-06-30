@@ -76,7 +76,7 @@ export default function CustomerPage() {
       document.head.appendChild(manifestLink);
     }
 
-    manifestLink.href = `/manifest?token=${encodeURIComponent(token)}&v=28`;
+    manifestLink.href = `/manifest?token=${encodeURIComponent(token)}&v=38`;
 
     let themeColor = document.querySelector('meta[name="theme-color"]');
 
@@ -96,7 +96,47 @@ export default function CustomerPage() {
       document.head.appendChild(appleIcon);
     }
 
-    appleIcon.href = "/icons/sa-apple-touch-icon.png";
+    appleIcon.href = "/icons/apple-touch-icon.png?v=38";
+
+    let appleCapable = document.querySelector('meta[name="apple-mobile-web-app-capable"]');
+
+    if (!appleCapable) {
+      appleCapable = document.createElement("meta");
+      appleCapable.name = "apple-mobile-web-app-capable";
+      document.head.appendChild(appleCapable);
+    }
+
+    appleCapable.content = "yes";
+
+    let appleStatusBar = document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]');
+
+    if (!appleStatusBar) {
+      appleStatusBar = document.createElement("meta");
+      appleStatusBar.name = "apple-mobile-web-app-status-bar-style";
+      document.head.appendChild(appleStatusBar);
+    }
+
+    appleStatusBar.content = "black-translucent";
+
+    let appleTitle = document.querySelector('meta[name="apple-mobile-web-app-title"]');
+
+    if (!appleTitle) {
+      appleTitle = document.createElement("meta");
+      appleTitle.name = "apple-mobile-web-app-title";
+      document.head.appendChild(appleTitle);
+    }
+
+    appleTitle.content = "Smart Assistance";
+
+    let favicon = document.querySelector('link[rel="icon"]');
+
+    if (!favicon) {
+      favicon = document.createElement("link");
+      favicon.rel = "icon";
+      document.head.appendChild(favicon);
+    }
+
+    favicon.href = "/favicon.ico?v=38";
 
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("/sw.js").catch(() => {});
@@ -620,7 +660,7 @@ export default function CustomerPage() {
               >
                 <div style={{ ...styles.brand, marginBottom: 0 }}>
                   <img
-                    src="/icons/sa-icon-192.png"
+                    src="/icons/sa-icon-192.png?v=38"
                     alt="Smart Assistance"
                     style={styles.brandLogo}
                   />
@@ -642,14 +682,14 @@ export default function CustomerPage() {
 
               <h1 style={styles.title}>Ciao {data.customer?.nome || customerName || ""} 👋</h1>
               <div style={styles.subtitle}>
-                Il tuo smartphone è sempre sotto controllo. Qui trovi garanzia,
+                Il tuo dispositivo è sempre sotto controllo. Qui trovi garanzia,
                 assistenza e accessori consigliati per il tuo dispositivo.
               </div>
             </section>
 
             <section style={styles.card}>
               <div style={{ fontSize: "14px", color: "#93c5fd", marginBottom: "8px", fontWeight: "bold" }}>
-                📱 Il tuo dispositivo
+                📱💻 Il tuo dispositivo
               </div>
               <h2 style={{ margin: "0 0 10px", fontSize: "24px" }}>
                 {deviceName || "Dispositivo non disponibile"}

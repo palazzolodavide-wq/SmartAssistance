@@ -2332,7 +2332,7 @@ export default function Home() {
       <aside className="sidebar">
         <div className="brand-box">
           <div className="brand-icon">
-            <img src="/icons/sa-icon-192.png" alt="Smart Assistance" />
+            <img src="/icons/sa-icon-192.png?v=38" alt="Smart Assistance" />
           </div>
           <div>
             <div className="brand-title">Smart Assistance</div>
