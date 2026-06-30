@@ -17,31 +17,31 @@ export async function GET(request) {
     categories: ["shopping", "utilities", "productivity"],
     icons: [
       {
-        src: "/icons/sa-icon-192.png?v=38",
+        src: "/icons/sa-icon-192.png?v=39",
         sizes: "192x192",
         type: "image/png",
         purpose: "any"
       },
       {
-        src: "/icons/sa-icon-512.png?v=38",
+        src: "/icons/sa-icon-512.png?v=39",
         sizes: "512x512",
         type: "image/png",
         purpose: "any"
       },
       {
-        src: "/icons/sa-maskable-192.png?v=38",
+        src: "/icons/sa-maskable-192.png?v=39",
         sizes: "192x192",
         type: "image/png",
         purpose: "maskable"
       },
       {
-        src: "/icons/sa-maskable-512.png?v=38",
+        src: "/icons/sa-maskable-512.png?v=39",
         sizes: "512x512",
         type: "image/png",
         purpose: "maskable"
       },
       {
-        src: "/icons/apple-touch-icon.png?v=38",
+        src: "/icons/apple-touch-icon.png?v=39",
         sizes: "180x180",
         type: "image/png",
         purpose: "any"
@@ -55,7 +55,7 @@ export async function GET(request) {
         url: startUrl,
         icons: [
           {
-            src: "/icons/sa-icon-192.png?v=38",
+            src: "/icons/sa-icon-192.png?v=39",
             sizes: "192x192",
             type: "image/png"
           }
@@ -67,7 +67,7 @@ export async function GET(request) {
   return new Response(JSON.stringify(manifest), {
     headers: {
       "Content-Type": "application/manifest+json",
-      "Cache-Control": "no-store"
+      "Cache-Control": "no-store, max-age=0"
     }
   });
 }

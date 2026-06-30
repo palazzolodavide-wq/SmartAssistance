@@ -23,6 +23,7 @@ export default function CustomerPage() {
   const [error, setError] = useState("");
   const [installPrompt, setInstallPrompt] = useState(null);
   const [isInstalled, setIsInstalled] = useState(false);
+  const [showIosInstallGuide, setShowIosInstallGuide] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -68,6 +69,12 @@ export default function CustomerPage() {
 
     setIsInstalled(standalone);
 
+    const isiOS =
+      /iphone|ipad|ipod/i.test(window.navigator.userAgent || "") ||
+      (window.navigator.platform === "MacIntel" && window.navigator.maxTouchPoints > 1);
+
+    setShowIosInstallGuide(isiOS && !standalone);
+
     let manifestLink = document.querySelector('link[rel="manifest"]');
 
     if (!manifestLink) {
@@ -76,7 +83,7 @@ export default function CustomerPage() {
       document.head.appendChild(manifestLink);
     }
 
-    manifestLink.href = `/manifest?token=${encodeURIComponent(token)}&v=38`;
+    manifestLink.href = `/manifest?token=${encodeURIComponent(token)}&v=39`;
 
     let themeColor = document.querySelector('meta[name="theme-color"]');
 
@@ -96,7 +103,7 @@ export default function CustomerPage() {
       document.head.appendChild(appleIcon);
     }
 
-    appleIcon.href = "/icons/apple-touch-icon.png?v=38";
+    appleIcon.href = "/icons/apple-touch-icon.png?v=39";
 
     let appleCapable = document.querySelector('meta[name="apple-mobile-web-app-capable"]');
 
@@ -136,7 +143,7 @@ export default function CustomerPage() {
       document.head.appendChild(favicon);
     }
 
-    favicon.href = "/favicon.ico?v=38";
+    favicon.href = "/favicon.ico?v=39";
 
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("/sw.js").catch(() => {});
@@ -365,18 +372,17 @@ export default function CustomerPage() {
       display: "flex",
       alignItems: "center",
       gap: "10px",
-      fontSize: "14px",
-      letterSpacing: ".08em",
-      textTransform: "uppercase",
-      opacity: .92,
       marginBottom: "18px",
       fontWeight: "bold",
     },
     brandLogo: {
-      width: "34px",
-      height: "34px",
-      borderRadius: "12px",
-      boxShadow: "0 10px 24px rgba(0,0,0,.28)",
+      width: "210px",
+      maxWidth: "72vw",
+      height: "auto",
+      borderRadius: "18px",
+      background: "#ffffff",
+      padding: "8px 10px",
+      boxShadow: "0 12px 28px rgba(0,0,0,.22)",
     },
     title: {
       margin: 0,
@@ -402,6 +408,21 @@ export default function CustomerPage() {
       display: "flex",
       justifyContent: "center",
       alignItems: "center",
+    },
+    iosInstallCard: {
+      background: "rgba(255,255,255,.10)",
+      border: "1px solid rgba(255,255,255,.14)",
+      borderRadius: "20px",
+      padding: "14px",
+      marginTop: "14px",
+      color: "#e0f2fe",
+      lineHeight: 1.45,
+      fontSize: "14px",
+    },
+    iosInstallTitle: {
+      color: "#ffffff",
+      fontWeight: "bold",
+      marginBottom: "6px",
     },
     card: {
       background: "#111827",
@@ -660,11 +681,10 @@ export default function CustomerPage() {
               >
                 <div style={{ ...styles.brand, marginBottom: 0 }}>
                   <img
-                    src="/icons/sa-icon-192.png?v=38"
+                    src="/brand/smart-assistance-wordmark-card.png?v=39"
                     alt="Smart Assistance"
                     style={styles.brandLogo}
                   />
-                  <span>Smart Assistance</span>
                 </div>
 
                 {installPrompt && !isInstalled && (
@@ -685,6 +705,14 @@ export default function CustomerPage() {
                 Il tuo dispositivo è sempre sotto controllo. Qui trovi garanzia,
                 assistenza e accessori consigliati per il tuo dispositivo.
               </div>
+
+              {showIosInstallGuide && (
+                <div style={styles.iosInstallCard}>
+                  <div style={styles.iosInstallTitle}>Installa su iPhone</div>
+                  Su Safari non compare il pulsante automatico. Tocca <strong>Condividi</strong> e poi
+                  <strong> Aggiungi alla schermata Home</strong>.
+                </div>
+              )}
             </section>
 
             <section style={styles.card}>

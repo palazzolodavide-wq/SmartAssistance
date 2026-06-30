@@ -1625,42 +1625,28 @@ export default function Home() {
         }
 
         .brand-box {
-          display: flex;
-          align-items: center;
-          gap: 12px;
-          padding: 4px 4px 18px;
+          display: grid;
+          gap: 10px;
+          padding: 8px 4px 18px;
           border-bottom: 1px solid rgba(255,255,255,.10);
         }
 
-        .brand-icon {
-          width: 48px;
-          height: 48px;
-          border-radius: 16px;
-          background: linear-gradient(135deg,#2563eb,#60a5fa);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          box-shadow: 0 12px 30px rgba(37,99,235,.35);
-          overflow: hidden;
-        }
-
-        .brand-icon img {
+        .brand-wordmark {
           width: 100%;
-          height: 100%;
-          object-fit: cover;
-          display: block;
-        }
-
-        .brand-title {
-          font-size: 19px;
-          font-weight: 900;
-          line-height: 1.1;
+          max-width: 218px;
+          min-height: 46px;
+          border-radius: 18px;
+          background: #ffffff;
+          padding: 9px 12px;
+          object-fit: contain;
+          box-shadow: 0 12px 30px rgba(37,99,235,.22);
         }
 
         .brand-subtitle {
           font-size: 12px;
           color: #94a3b8;
-          margin-top: 3px;
+          margin-top: 0;
+          padding-left: 4px;
         }
 
         .nav-list {
@@ -2331,13 +2317,12 @@ export default function Home() {
 
       <aside className="sidebar">
         <div className="brand-box">
-          <div className="brand-icon">
-            <img src="/icons/sa-icon-192.png?v=38" alt="Smart Assistance" />
-          </div>
-          <div>
-            <div className="brand-title">Smart Assistance</div>
-            <div className="brand-subtitle">Admin Dashboard</div>
-          </div>
+          <img
+            className="brand-wordmark"
+            src="/brand/smart-assistance-wordmark-card.png?v=39"
+            alt="Smart Assistance"
+          />
+          <div className="brand-subtitle">Admin Dashboard</div>
         </div>
 
         <nav className="nav-list">
