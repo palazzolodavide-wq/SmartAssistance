@@ -876,6 +876,7 @@ app.get("/api/stats/clicks", async (req, res) => {
         u.customer_code,
         u.nome,
         u.cognome,
+        u.app_token,
         COUNT(*)::int AS clicks,
         COUNT(*) FILTER (
           WHERE oc.created_at >= NOW() - INTERVAL '7 days'
@@ -1361,7 +1362,8 @@ app.get("/api/receipt-upload/:token", async (req, res) => {
       customer: {
         customer_code: item.customer_code,
         nome: item.nome,
-        cognome: item.cognome
+        cognome: item.cognome,
+        app_token: item.app_token
       }
     });
   } catch (err) {

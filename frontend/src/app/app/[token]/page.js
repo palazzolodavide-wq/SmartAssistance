@@ -24,6 +24,7 @@ export default function CustomerPage() {
   const [installPrompt, setInstallPrompt] = useState(null);
   const [isInstalled, setIsInstalled] = useState(false);
   const [showIosInstallGuide, setShowIosInstallGuide] = useState(false);
+  const [receiptViewer, setReceiptViewer] = useState(null);
 
   useEffect(() => {
     async function load() {
@@ -368,47 +369,13 @@ export default function CustomerPage() {
       return;
     }
 
-    const win = window.open();
+    setReceiptViewer(device);
+  }
 
-    if (!win) {
-      window.location.href = device.receipt_data_url;
-      return;
-    }
-
-    win.document.write(`
-      <!doctype html>
-      <html>
-        <head>
-          <title>Scontrino ${device.marca || ""} ${device.modello || ""}</title>
-          <meta charset="utf-8" />
-          <style>
-            body {
-              margin: 0;
-              background: #0f172a;
-              color: white;
-              font-family: Arial, sans-serif;
-            }
-
-            iframe, img {
-              width: 100vw;
-              height: 100vh;
-              border: 0;
-              object-fit: contain;
-              background: #0f172a;
-            }
-          </style>
-        </head>
-        <body>
-          ${
-            device.receipt_mime_type === "application/pdf"
-              ? `<iframe src="${device.receipt_data_url}"></iframe>`
-              : `<img src="${device.receipt_data_url}" alt="Scontrino" />`
-          }
-        </body>
-      </html>
-    `);
-
-    win.document.close();
+  function closeReceiptViewer() {
+    setReceiptViewer(null);
+    setTab("home");
+    window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   async function installWebApp() {
@@ -506,6 +473,65 @@ export default function CustomerPage() {
       color: "#ffffff",
       fontWeight: "bold",
       marginBottom: "6px",
+    },
+    receiptOverlay: {
+      position: "fixed",
+      inset: 0,
+      zIndex: 9999,
+      background: "#0f172a",
+      display: "flex",
+      flexDirection: "column",
+    },
+    receiptToolbar: {
+      minHeight: "64px",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: "12px",
+      padding: "10px 14px",
+      background: "rgba(15,23,42,.98)",
+      borderBottom: "1px solid rgba(255,255,255,.12)",
+      color: "#f8fafc",
+    },
+    receiptTitle: {
+      minWidth: 0,
+      fontWeight: "bold",
+      fontSize: "14px",
+      lineHeight: 1.25,
+      overflow: "hidden",
+      textOverflow: "ellipsis",
+      whiteSpace: "nowrap",
+    },
+    receiptBackButton: {
+      border: "none",
+      borderRadius: "14px",
+      padding: "11px 14px",
+      background: "#2563eb",
+      color: "white",
+      fontWeight: "bold",
+      fontSize: "14px",
+      cursor: "pointer",
+      whiteSpace: "nowrap",
+    },
+    receiptFrameWrap: {
+      flex: 1,
+      minHeight: 0,
+      background: "#111827",
+      display: "flex",
+      alignItems: "stretch",
+      justifyContent: "center",
+    },
+    receiptFrame: {
+      width: "100%",
+      height: "100%",
+      border: 0,
+      background: "#111827",
+    },
+    receiptImage: {
+      width: "100%",
+      height: "100%",
+      objectFit: "contain",
+      background: "#111827",
     },
     card: {
       background: "#111827",
@@ -749,6 +775,40 @@ export default function CustomerPage() {
 
   return (
     <main style={styles.page}>
+      {receiptViewer && (
+        <section style={styles.receiptOverlay}>
+          <div style={styles.receiptToolbar}>
+            <button
+              type="button"
+              onClick={closeReceiptViewer}
+              style={styles.receiptBackButton}
+            >
+              ← Torna alla Home
+            </button>
+
+            <div style={styles.receiptTitle}>
+              Scontrino {receiptViewer.marca || ""} {receiptViewer.modello || ""}
+            </div>
+          </div>
+
+          <div style={styles.receiptFrameWrap}>
+            {receiptViewer.receipt_mime_type === "application/pdf" ? (
+              <iframe
+                src={receiptViewer.receipt_data_url}
+                title="Scontrino acquisto"
+                style={styles.receiptFrame}
+              />
+            ) : (
+              <img
+                src={receiptViewer.receipt_data_url}
+                alt="Scontrino acquisto"
+                style={styles.receiptImage}
+              />
+            )}
+          </div>
+        </section>
+      )}
+
       <div style={styles.shell}>
         {tab === "home" && (
           <>

@@ -246,6 +246,9 @@ export default function ReceiptUploadPage() {
 
   const customerName = `${info?.customer?.nome || ""} ${info?.customer?.cognome || ""}`.trim();
   const deviceName = `${info?.device?.marca || ""} ${info?.device?.modello || ""}`.trim();
+  const customerHomeUrl = info?.customer?.app_token
+    ? `/app/${encodeURIComponent(info.customer.app_token)}`
+    : "/";
 
   const styles = {
     page: {
@@ -347,8 +350,33 @@ export default function ReceiptUploadPage() {
             <div style={{ fontSize: "42px", marginBottom: "12px" }}>✅</div>
             <h1 style={{ margin: "0 0 10px" }}>Scontrino caricato</h1>
             <p style={styles.muted}>
-              Puoi chiudere questa pagina. Lo scontrino è ora visibile nella WebApp cliente.
+              Lo scontrino è ora visibile nella WebApp cliente.
             </p>
+
+            <button
+              type="button"
+              onClick={() => {
+                window.location.href = customerHomeUrl;
+              }}
+              style={styles.button}
+            >
+              ← Torna alla Home
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                if (window.history.length > 1) {
+                  window.history.back();
+                  return;
+                }
+
+                window.location.href = customerHomeUrl;
+              }}
+              style={styles.outlineButton}
+            >
+              Indietro
+            </button>
           </section>
         </div>
       </main>
