@@ -1132,7 +1132,7 @@ export default function CustomerPage() {
                     onClick={goToOffers}
                     style={styles.secondaryCta}
                   >
-                    Apri Per te →
+                    Apri offerte per te →
                   </button>
                 </div>
               </section>
