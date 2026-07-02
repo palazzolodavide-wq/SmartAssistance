@@ -19,6 +19,7 @@ export default function CustomerPage() {
   });
 
   const [tab, setTab] = useState("home");
+  const [offerFilter, setOfferFilter] = useState("all");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [installPrompt, setInstallPrompt] = useState(null);
@@ -104,7 +105,7 @@ export default function CustomerPage() {
       document.head.appendChild(appleIcon);
     }
 
-    appleIcon.href = "/icons/apple-touch-icon.png?v=48";
+    appleIcon.href = "/icons/apple-touch-icon.png?v=49";
 
     let appleCapable = document.querySelector('meta[name="apple-mobile-web-app-capable"]');
 
@@ -144,7 +145,7 @@ export default function CustomerPage() {
       document.head.appendChild(favicon);
     }
 
-    favicon.href = "/favicon.ico?v=48";
+    favicon.href = "/favicon.ico?v=49";
 
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("/sw.js").catch(() => {});
@@ -255,6 +256,33 @@ export default function CustomerPage() {
     return "Per supporto sul tuo dispositivo, configurazioni, garanzia o consigli sugli accessori, contattaci direttamente su WhatsApp.";
   }
 
+  function normalizeOfferCategory(value) {
+    return String(value || "generale").toLowerCase().trim();
+  }
+
+  function getOfferCategoryLabel(value) {
+    const category = normalizeOfferCategory(value);
+
+    if (category === "accessori") return "Accessori";
+    if (category === "smartphone") return "Smartphone";
+    if (category === "notebook") return "Notebook";
+    if (category === "desktop") return "Desktop / PC";
+    if (category === "casa") return "Casa";
+    if (category === "gaming") return "Gaming";
+    if (category === "audio") return "Audio";
+    if (category === "generale") return "Generale";
+
+    return category;
+  }
+
+  function isCompatibleOffer(offer) {
+    return offer?.source === "amazon_recommended" || offer?.tipo_offerta === "accessory";
+  }
+
+  function isRecommendedOffer(offer) {
+    return offer?.source === "manual" || offer?.tipo_offerta === "manual";
+  }
+
 
 
   const allOffers = useMemo(() => {
@@ -272,6 +300,46 @@ export default function CustomerPage() {
       ).values(),
     ];
   }, [data.manualOffers, data.recommendedOffers, data.trendingOffers]);
+
+  const offerFilterOptions = useMemo(() => {
+    const categories = [
+      ...new Set(
+        allOffers
+          .map((offer) => normalizeOfferCategory(offer.categoria))
+          .filter(Boolean)
+      )
+    ];
+
+    return [
+      { id: "all", label: "Tutte", count: allOffers.length },
+      { id: "compatible", label: "Compatibili", count: allOffers.filter(isCompatibleOffer).length },
+      { id: "recommended", label: "Consigliati", count: allOffers.filter(isRecommendedOffer).length },
+      ...categories
+        .filter((category) => category && category !== "generale")
+        .map((category) => ({
+          id: `category:${category}`,
+          label: getOfferCategoryLabel(category),
+          count: allOffers.filter((offer) => normalizeOfferCategory(offer.categoria) === category).length,
+        }))
+    ].filter((option) => option.count > 0 || option.id === "all");
+  }, [allOffers]);
+
+  const filteredAllOffers = useMemo(() => {
+    if (offerFilter === "compatible") {
+      return allOffers.filter(isCompatibleOffer);
+    }
+
+    if (offerFilter === "recommended") {
+      return allOffers.filter(isRecommendedOffer);
+    }
+
+    if (offerFilter.startsWith("category:")) {
+      const category = offerFilter.replace("category:", "");
+      return allOffers.filter((offer) => normalizeOfferCategory(offer.categoria) === category);
+    }
+
+    return allOffers;
+  }, [allOffers, offerFilter]);
 
   const homeDeviceOffers = useMemo(() => {
     return (data.recommendedOffers || [])
@@ -602,6 +670,29 @@ export default function CustomerPage() {
       fontWeight: "bold",
       fontSize: "13px",
       marginBottom: "12px",
+    },
+    filterBar: {
+      display: "flex",
+      gap: "10px",
+      overflowX: "auto",
+      padding: "4px 0 14px",
+      marginBottom: "6px",
+    },
+    filterButton: {
+      border: "1px solid rgba(96,165,250,.30)",
+      borderRadius: "999px",
+      padding: "10px 13px",
+      background: "rgba(255,255,255,.06)",
+      color: "#cbd5e1",
+      fontWeight: "bold",
+      fontSize: "13px",
+      cursor: "pointer",
+      whiteSpace: "nowrap",
+    },
+    filterButtonActive: {
+      background: "#2563eb",
+      borderColor: "#60a5fa",
+      color: "#ffffff",
     },
     guideCard: {
       display: "flex",
@@ -989,7 +1080,7 @@ export default function CustomerPage() {
               >
                 <div style={{ ...styles.brand, marginBottom: 0 }}>
                   <img
-                    src="/brand/smart-assistance-wordmark-card.png?v=48"
+                    src="/brand/smart-assistance-wordmark-card.png?v=49"
                     alt="Smart Assistance"
                     style={styles.brandLogo}
                   />
@@ -1175,11 +1266,37 @@ export default function CustomerPage() {
               {getOfferIntro(primaryCategory)}
             </p>
 
+            {allOffers.length > 0 && (
+              <div style={styles.filterBar}>
+                {offerFilterOptions.map((option) => {
+                  const active = offerFilter === option.id;
+
+                  return (
+                    <button
+                      key={option.id}
+                      type="button"
+                      onClick={() => setOfferFilter(option.id)}
+                      style={{
+                        ...styles.filterButton,
+                        ...(active ? styles.filterButtonActive : {}),
+                      }}
+                    >
+                      {option.label} · {option.count}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
             {allOffers.length === 0 ? (
               <div className="sa-app-card" style={styles.card}>Nessuna offerta disponibile al momento.</div>
+            ) : filteredAllOffers.length === 0 ? (
+              <div className="sa-app-card" style={styles.card}>
+                Nessuna offerta per questo filtro.
+              </div>
             ) : (
               <div className="sa-offers-grid">
-                {allOffers.map((offer, index) => (
+                {filteredAllOffers.map((offer, index) => (
                   <OfferCard key={offer.asin || offer.affiliate_url || index} offer={offer} />
                 ))}
               </div>
