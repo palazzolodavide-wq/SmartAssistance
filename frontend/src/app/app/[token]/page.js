@@ -104,7 +104,7 @@ export default function CustomerPage() {
       document.head.appendChild(appleIcon);
     }
 
-    appleIcon.href = "/icons/apple-touch-icon.png?v=39";
+    appleIcon.href = "/icons/apple-touch-icon.png?v=44";
 
     let appleCapable = document.querySelector('meta[name="apple-mobile-web-app-capable"]');
 
@@ -144,7 +144,7 @@ export default function CustomerPage() {
       document.head.appendChild(favicon);
     }
 
-    favicon.href = "/favicon.ico?v=39";
+    favicon.href = "/favicon.ico?v=44";
 
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("/sw.js").catch(() => {});
@@ -407,7 +407,7 @@ export default function CustomerPage() {
       paddingBottom: "92px",
     },
     shell: {
-      maxWidth: "560px",
+      maxWidth: "1180px",
       margin: "0 auto",
     },
     hero: {
@@ -664,7 +664,7 @@ export default function CustomerPage() {
 
   function OfferCard({ offer, compact = false }) {
     return (
-      <div style={styles.lightCard}>
+      <div className="sa-offer-card" style={styles.lightCard}>
         <div style={{ position: "relative" }}>
           {offer.sconto_percentuale > 0 && (
             <div
@@ -753,7 +753,7 @@ export default function CustomerPage() {
   if (loading) {
     return (
       <main style={styles.page}>
-        <div style={{ ...styles.shell, display: "flex", minHeight: "80vh", alignItems: "center", justifyContent: "center" }}>
+        <div className="sa-shell" style={{ ...styles.shell, display: "flex", minHeight: "80vh", alignItems: "center", justifyContent: "center" }}>
           Caricamento...
         </div>
       </main>
@@ -763,8 +763,8 @@ export default function CustomerPage() {
   if (error) {
     return (
       <main style={styles.page}>
-        <div style={styles.shell}>
-          <div style={styles.card}>
+        <div className="sa-shell" style={styles.shell}>
+          <div className="sa-app-card" style={styles.card}>
             <h2>Impossibile caricare la WebApp</h2>
             <p>{error}</p>
           </div>
@@ -774,7 +774,129 @@ export default function CustomerPage() {
   }
 
   return (
-    <main style={styles.page}>
+    <main className="sa-page" style={styles.page}>
+      <style>{`
+        .sa-shell {
+          width: 100%;
+        }
+
+        .sa-home-grid,
+        .sa-offers-grid,
+        .sa-devices-grid,
+        .sa-support-grid {
+          display: grid;
+          gap: 16px;
+        }
+
+        .sa-offers-grid,
+        .sa-devices-grid,
+        .sa-support-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .sa-section-header {
+          margin-bottom: 14px;
+        }
+
+        .sa-offer-card,
+        .sa-app-card {
+          min-width: 0;
+        }
+
+        @media (min-width: 900px) {
+          .sa-page {
+            padding: 28px 32px 108px !important;
+          }
+
+          .sa-shell {
+            max-width: 1180px !important;
+          }
+
+          .sa-home-grid {
+            grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+            align-items: start;
+          }
+
+          .sa-home-hero {
+            grid-column: 1 / -1;
+            min-height: 190px;
+          }
+
+          .sa-home-device {
+            grid-column: 1;
+          }
+
+          .sa-home-assist {
+            grid-column: 2;
+          }
+
+          .sa-offer-section,
+          .sa-trending-section {
+            grid-column: 1 / -1;
+          }
+
+          .sa-offers-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+          }
+
+          .sa-offers-grid-home {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+          }
+
+          .sa-devices-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+          }
+
+          .sa-support-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+          }
+
+          .sa-support-main {
+            grid-column: 1 / -1;
+          }
+
+          .sa-nav {
+            max-width: 760px !important;
+            bottom: 18px !important;
+          }
+
+          .sa-offer-card,
+          .sa-app-card {
+            transition: transform .16s ease, box-shadow .16s ease;
+          }
+
+          .sa-offer-card:hover,
+          .sa-app-card:hover {
+            transform: translateY(-2px);
+          }
+        }
+
+        @media (min-width: 1180px) {
+          .sa-offers-grid {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+          }
+
+          .sa-offers-grid-home {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+          }
+
+          .sa-devices-grid {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+          }
+
+          .sa-nav {
+            max-width: 860px !important;
+          }
+        }
+
+        @media (max-width: 899px) {
+          .sa-page {
+            padding: 16px !important;
+            padding-bottom: 92px !important;
+          }
+        }
+      `}</style>
+
       {receiptViewer && (
         <section style={styles.receiptOverlay}>
           <div style={styles.receiptToolbar}>
@@ -809,10 +931,10 @@ export default function CustomerPage() {
         </section>
       )}
 
-      <div style={styles.shell}>
+      <div className="sa-shell" style={styles.shell}>
         {tab === "home" && (
-          <>
-            <section style={styles.hero}>
+          <div className="sa-home-grid">
+            <section className="sa-home-hero sa-app-card" style={styles.hero}>
               <div
                 style={{
                   display: "flex",
@@ -824,7 +946,7 @@ export default function CustomerPage() {
               >
                 <div style={{ ...styles.brand, marginBottom: 0 }}>
                   <img
-                    src="/brand/smart-assistance-wordmark-card.png?v=39"
+                    src="/brand/smart-assistance-wordmark-card.png?v=44"
                     alt="Smart Assistance"
                     style={styles.brandLogo}
                   />
@@ -857,7 +979,7 @@ export default function CustomerPage() {
               )}
             </section>
 
-            <section style={styles.card}>
+            <section className="sa-home-device sa-app-card" style={styles.card}>
               <div style={{ fontSize: "14px", color: "#93c5fd", marginBottom: "8px", fontWeight: "bold" }}>
                 {getDeviceIcon(primaryCategory)} {getDeviceLabel(primaryCategory)}
               </div>
@@ -890,25 +1012,7 @@ export default function CustomerPage() {
               )}
             </section>
 
-            {homeDeviceOffers.length > 0 && (
-              <>
-                <h2 style={styles.sectionTitle}>🎁 Consigliati per il tuo dispositivo</h2>
-                {homeDeviceOffers.map((offer, index) => (
-                  <OfferCard key={offer.asin || offer.affiliate_url || index} offer={offer} />
-                ))}
-              </>
-            )}
-
-            {data.trendingOffers?.length > 0 && (
-              <>
-                <h2 style={styles.sectionTitle}>🔥 Offerte interessanti</h2>
-                {data.trendingOffers.slice(0, 3).map((offer, index) => (
-                  <OfferCard key={offer.asin || offer.affiliate_url || index} offer={offer} compact />
-                ))}
-              </>
-            )}
-
-            <section style={styles.card}>
+            <section className="sa-home-assist sa-app-card" style={styles.card}>
               <h2 style={{ margin: "0 0 8px" }}>💬 Hai bisogno di assistenza?</h2>
               <p style={{ color: "#cbd5e1", lineHeight: 1.5 }}>
                 Scrivici su WhatsApp: ti aiutiamo con configurazione,
@@ -931,7 +1035,30 @@ export default function CustomerPage() {
                 Apri WhatsApp
               </button>
             </section>
-          </>
+
+            {homeDeviceOffers.length > 0 && (
+              <section className="sa-offer-section">
+                <h2 style={styles.sectionTitle}>🎁 Consigliati per il tuo dispositivo</h2>
+                <div className="sa-offers-grid sa-offers-grid-home">
+                  {homeDeviceOffers.slice(0, 3).map((offer, index) => (
+                    <OfferCard key={offer.asin || offer.affiliate_url || index} offer={offer} />
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {data.trendingOffers?.length > 0 && (
+              <section className="sa-trending-section">
+                <h2 style={styles.sectionTitle}>🔥 Offerte interessanti</h2>
+                <div className="sa-offers-grid">
+                  {data.trendingOffers.slice(0, 3).map((offer, index) => (
+                    <OfferCard key={offer.asin || offer.affiliate_url || index} offer={offer} compact />
+                  ))}
+                </div>
+              </section>
+            )}
+
+          </div>
         )}
 
         {tab === "offers" && (
@@ -942,11 +1069,13 @@ export default function CustomerPage() {
             </p>
 
             {allOffers.length === 0 ? (
-              <div style={styles.card}>Nessuna offerta disponibile al momento.</div>
+              <div className="sa-app-card" style={styles.card}>Nessuna offerta disponibile al momento.</div>
             ) : (
-              allOffers.map((offer, index) => (
-                <OfferCard key={offer.asin || offer.affiliate_url || index} offer={offer} />
-              ))
+              <div className="sa-offers-grid">
+                {allOffers.map((offer, index) => (
+                  <OfferCard key={offer.asin || offer.affiliate_url || index} offer={offer} />
+                ))}
+              </div>
             )}
           </>
         )}
@@ -955,10 +1084,11 @@ export default function CustomerPage() {
           <>
             <h1 style={{ marginTop: 0 }}>📱💻🖥️ Dispositivi</h1>
             {data.devices.length === 0 ? (
-              <div style={styles.card}>Nessun dispositivo registrato.</div>
+              <div className="sa-app-card" style={styles.card}>Nessun dispositivo registrato.</div>
             ) : (
-              data.devices.map((device, index) => (
-                <section key={index} style={styles.card}>
+              <div className="sa-devices-grid">
+                {data.devices.map((device, index) => (
+                  <section key={index} className="sa-app-card" style={styles.card}>
                   <div style={{
                     display: "inline-block",
                     background: "rgba(96,165,250,.18)",
@@ -1011,7 +1141,8 @@ export default function CustomerPage() {
                     </div>
                   )}
                 </section>
-              ))
+                ))}
+              </div>
             )}
           </>
         )}
@@ -1020,7 +1151,8 @@ export default function CustomerPage() {
           <>
             <h1 style={{ marginTop: 0 }}>💬 Assistenza</h1>
 
-            <section style={styles.card}>
+            <div className="sa-support-grid">
+            <section className="sa-support-main sa-app-card" style={styles.card}>
               <h2 style={{ marginTop: 0 }}>Siamo qui per aiutarti</h2>
               <p style={{ color: "#cbd5e1", lineHeight: 1.5 }}>
                 {getSupportIntro(primaryCategory)}
@@ -1043,7 +1175,7 @@ export default function CustomerPage() {
               </button>
             </section>
 
-            <section style={styles.card}>
+            <section className="sa-app-card" style={styles.card}>
               <h2 style={{ marginTop: 0 }}>📚 Guide rapide</h2>
               <p style={{ color: "#cbd5e1", lineHeight: 1.5 }}>
                 Piccoli consigli utili per usare meglio il tuo smartphone ogni giorno.
@@ -1092,7 +1224,7 @@ export default function CustomerPage() {
               </div>
             </section>
 
-            <section style={styles.card}>
+            <section className="sa-app-card" style={styles.card}>
               <h2 style={{ marginTop: 0 }}>📞 Contatti utili</h2>
               <p style={{ color: "#cbd5e1", lineHeight: 1.5, marginBottom: "14px" }}>
                 Salva questa WebApp nella schermata Home per ritrovare assistenza, garanzia e consigli in un solo tocco.
@@ -1115,11 +1247,12 @@ export default function CustomerPage() {
                 Chiedi informazioni
               </button>
             </section>
+            </div>
           </>
         )}
       </div>
 
-      <nav style={styles.nav}>
+      <nav className="sa-nav" style={styles.nav}>
         <NavButton id="home" icon="🏠" label="Home" />
         <NavButton id="offers" icon="🎁" label="Per te" />
         <NavButton id="devices" icon="📱" label="Device" />
