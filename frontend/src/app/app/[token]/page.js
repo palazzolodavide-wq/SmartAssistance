@@ -104,7 +104,7 @@ export default function CustomerPage() {
       document.head.appendChild(appleIcon);
     }
 
-    appleIcon.href = "/icons/apple-touch-icon.png?v=44";
+    appleIcon.href = "/icons/apple-touch-icon.png?v=46b";
 
     let appleCapable = document.querySelector('meta[name="apple-mobile-web-app-capable"]');
 
@@ -144,7 +144,7 @@ export default function CustomerPage() {
       document.head.appendChild(favicon);
     }
 
-    favicon.href = "/favicon.ico?v=44";
+    favicon.href = "/favicon.ico?v=46b";
 
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("/sw.js").catch(() => {});
@@ -364,6 +364,16 @@ export default function CustomerPage() {
     window.location.href = `https://wa.me/${WHATSAPP_NUMBER}?text=${message}`;
   }
 
+  function goToOffers() {
+    setTab("offers");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function goToSupport() {
+    setTab("support");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
   function openReceipt(device) {
     if (!device?.receipt_data_url) {
       return;
@@ -563,6 +573,23 @@ export default function CustomerPage() {
       cursor: "pointer",
       background: "#dc2626",
       color: "white",
+    },
+    secondaryCta: {
+      width: "100%",
+      border: "1px solid rgba(96,165,250,.40)",
+      borderRadius: "16px",
+      padding: "14px",
+      fontWeight: "bold",
+      fontSize: "15px",
+      cursor: "pointer",
+      background: "rgba(37,99,235,.14)",
+      color: "#bfdbfe",
+    },
+    compactCtaRow: {
+      display: "grid",
+      gridTemplateColumns: "1fr",
+      gap: "10px",
+      marginTop: "14px",
     },
     guideCard: {
       display: "flex",
@@ -946,7 +973,7 @@ export default function CustomerPage() {
               >
                 <div style={{ ...styles.brand, marginBottom: 0 }}>
                   <img
-                    src="/brand/smart-assistance-wordmark-card.png?v=44"
+                    src="/brand/smart-assistance-wordmark-card.png?v=46b"
                     alt="Smart Assistance"
                     style={styles.brandLogo}
                   />
@@ -1018,22 +1045,55 @@ export default function CustomerPage() {
                 Scrivici su WhatsApp: ti aiutiamo con configurazione,
                 garanzia, accessori e supporto post vendita.
               </p>
-              <button
-                onClick={openWhatsApp}
-                style={{
-                  width: "100%",
-                  border: "none",
-                  borderRadius: "16px",
-                  padding: "15px",
-                  background: "#25D366",
-                  color: "white",
-                  fontWeight: "bold",
-                  fontSize: "16px",
-                  cursor: "pointer",
-                }}
-              >
-                Apri WhatsApp
-              </button>
+
+              <div style={styles.compactCtaRow}>
+                <button
+                  onClick={openWhatsApp}
+                  style={{
+                    width: "100%",
+                    border: "none",
+                    borderRadius: "16px",
+                    padding: "15px",
+                    background: "#25D366",
+                    color: "white",
+                    fontWeight: "bold",
+                    fontSize: "16px",
+                    cursor: "pointer",
+                  }}
+                >
+                  Apri WhatsApp
+                </button>
+
+                <button
+                  type="button"
+                  onClick={goToSupport}
+                  style={styles.secondaryCta}
+                >
+                  Guide e contatti →
+                </button>
+              </div>
+
+              {installPrompt && !isInstalled && (
+                <div style={{
+                  marginTop: "14px",
+                  borderTop: "1px solid rgba(255,255,255,.08)",
+                  paddingTop: "14px",
+                }}>
+                  <div style={{ color: "#bfdbfe", fontWeight: "bold", marginBottom: "6px" }}>
+                    Installa Smart Assistance
+                  </div>
+                  <p style={{ color: "#cbd5e1", lineHeight: 1.45, fontSize: "14px", marginTop: 0 }}>
+                    Aggiungila al PC o alla schermata Home per ritrovarla subito.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={installWebApp}
+                    style={styles.secondaryCta}
+                  >
+                    Installa WebApp 📲
+                  </button>
+                </div>
+              )}
             </section>
 
             {homeDeviceOffers.length > 0 && (
@@ -1043,6 +1103,16 @@ export default function CustomerPage() {
                   {homeDeviceOffers.slice(0, 3).map((offer, index) => (
                     <OfferCard key={offer.asin || offer.affiliate_url || index} offer={offer} />
                   ))}
+                </div>
+
+                <div style={styles.compactCtaRow}>
+                  <button
+                    type="button"
+                    onClick={goToOffers}
+                    style={styles.secondaryCta}
+                  >
+                    Vedi tutte le offerte →
+                  </button>
                 </div>
               </section>
             )}
@@ -1054,6 +1124,16 @@ export default function CustomerPage() {
                   {data.trendingOffers.slice(0, 3).map((offer, index) => (
                     <OfferCard key={offer.asin || offer.affiliate_url || index} offer={offer} compact />
                   ))}
+                </div>
+
+                <div style={styles.compactCtaRow}>
+                  <button
+                    type="button"
+                    onClick={goToOffers}
+                    style={styles.secondaryCta}
+                  >
+                    Apri Per te →
+                  </button>
                 </div>
               </section>
             )}
