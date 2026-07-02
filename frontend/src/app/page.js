@@ -260,6 +260,43 @@ export default function Home() {
     return new Date(value).toLocaleDateString("it-IT");
   }
 
+  function calculateWarrantyExpiry(startDate, years = 2) {
+    if (!startDate) {
+      return "";
+    }
+
+    const date = new Date(`${startDate}T12:00:00`);
+
+    if (Number.isNaN(date.getTime())) {
+      return "";
+    }
+
+    const originalMonth = date.getMonth();
+    date.setFullYear(date.getFullYear() + years);
+
+    if (date.getMonth() !== originalMonth) {
+      date.setDate(0);
+    }
+
+    return date.toISOString().slice(0, 10);
+  }
+
+  function updateNewCustomerWarrantyStart(startDate) {
+    setNewCustomerDeviceForm((current) => ({
+      ...current,
+      data_acquisto: startDate,
+      scadenza_garanzia: calculateWarrantyExpiry(startDate),
+    }));
+  }
+
+  function updateDeviceWarrantyStart(startDate) {
+    setDeviceForm((current) => ({
+      ...current,
+      data_acquisto: startDate,
+      scadenza_garanzia: calculateWarrantyExpiry(startDate),
+    }));
+  }
+
   function normalizeDeviceCategory(value) {
     const category = String(value || "").toLowerCase().trim();
 
@@ -2633,11 +2670,11 @@ export default function Home() {
                         </select>
                       </Field>
 
-                      <Field label="Data acquisto">
+                      <Field label="Inizio garanzia / data acquisto">
                         <input
                           type="date"
                           value={newCustomerDeviceForm.data_acquisto}
-                          onChange={(e) => setNewCustomerDeviceForm({ ...newCustomerDeviceForm, data_acquisto: e.target.value })}
+                          onChange={(e) => updateNewCustomerWarrantyStart(e.target.value)}
                         />
                       </Field>
 
@@ -2747,11 +2784,11 @@ export default function Home() {
                     </select>
                   </Field>
 
-                  <Field label="Data acquisto">
+                  <Field label="Inizio garanzia / data acquisto">
                     <input
                       type="date"
                       value={deviceForm.data_acquisto}
-                      onChange={(e) => setDeviceForm({ ...deviceForm, data_acquisto: e.target.value })}
+                      onChange={(e) => updateDeviceWarrantyStart(e.target.value)}
                     />
                   </Field>
 
@@ -3046,11 +3083,11 @@ export default function Home() {
                     </select>
                   </Field>
 
-                <Field label="Data acquisto">
+                <Field label="Inizio garanzia / data acquisto">
                   <input
                     type="date"
                     value={deviceForm.data_acquisto}
-                    onChange={(e) => setDeviceForm({ ...deviceForm, data_acquisto: e.target.value })}
+                    onChange={(e) => updateDeviceWarrantyStart(e.target.value)}
                   />
                 </Field>
 
