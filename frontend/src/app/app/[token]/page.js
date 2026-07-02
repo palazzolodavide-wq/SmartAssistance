@@ -104,7 +104,7 @@ export default function CustomerPage() {
       document.head.appendChild(appleIcon);
     }
 
-    appleIcon.href = "/icons/apple-touch-icon.png?v=46b";
+    appleIcon.href = "/icons/apple-touch-icon.png?v=48";
 
     let appleCapable = document.querySelector('meta[name="apple-mobile-web-app-capable"]');
 
@@ -144,7 +144,7 @@ export default function CustomerPage() {
       document.head.appendChild(favicon);
     }
 
-    favicon.href = "/favicon.ico?v=46b";
+    favicon.href = "/favicon.ico?v=48";
 
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("/sw.js").catch(() => {});
@@ -591,6 +591,18 @@ export default function CustomerPage() {
       gap: "10px",
       marginTop: "14px",
     },
+    featuredOfferLabel: {
+      display: "inline-flex",
+      alignItems: "center",
+      gap: "8px",
+      borderRadius: "999px",
+      padding: "7px 10px",
+      background: "rgba(250,204,21,.14)",
+      color: "#fde68a",
+      fontWeight: "bold",
+      fontSize: "13px",
+      marginBottom: "12px",
+    },
     guideCard: {
       display: "flex",
       gap: "12px",
@@ -830,6 +842,10 @@ export default function CustomerPage() {
           min-width: 0;
         }
 
+        .sa-featured-offer {
+          margin-bottom: 16px;
+        }
+
         @media (min-width: 900px) {
           .sa-page {
             padding: 28px 32px 108px !important;
@@ -973,7 +989,7 @@ export default function CustomerPage() {
               >
                 <div style={{ ...styles.brand, marginBottom: 0 }}>
                   <img
-                    src="/brand/smart-assistance-wordmark-card.png?v=46b"
+                    src="/brand/smart-assistance-wordmark-card.png?v=48"
                     alt="Smart Assistance"
                     style={styles.brandLogo}
                   />
@@ -1099,11 +1115,22 @@ export default function CustomerPage() {
             {homeDeviceOffers.length > 0 && (
               <section className="sa-offer-section">
                 <h2 style={styles.sectionTitle}>🎁 Consigliati per il tuo dispositivo</h2>
-                <div className="sa-offers-grid sa-offers-grid-home">
-                  {homeDeviceOffers.slice(0, 3).map((offer, index) => (
-                    <OfferCard key={offer.asin || offer.affiliate_url || index} offer={offer} />
-                  ))}
-                </div>
+                {homeDeviceOffers[0] && (
+                  <div className="sa-featured-offer">
+                    <div style={styles.featuredOfferLabel}>⭐ Prodotto in evidenza</div>
+                    <OfferCard
+                      offer={homeDeviceOffers[0]}
+                    />
+                  </div>
+                )}
+
+                {homeDeviceOffers.slice(1, 3).length > 0 && (
+                  <div className="sa-offers-grid sa-offers-grid-home">
+                    {homeDeviceOffers.slice(1, 3).map((offer, index) => (
+                      <OfferCard key={offer.asin || offer.affiliate_url || index} offer={offer} compact />
+                    ))}
+                  </div>
+                )}
 
                 <div style={styles.compactCtaRow}>
                   <button
