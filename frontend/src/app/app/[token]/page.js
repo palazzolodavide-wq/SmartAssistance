@@ -172,6 +172,89 @@ export default function CustomerPage() {
 
   const customerName = `${data.customer?.nome || ""} ${data.customer?.cognome || ""}`.trim();
   const deviceName = `${data.device?.marca || ""} ${data.device?.modello || ""}`.trim();
+  const primaryCategory = normalizeDeviceCategory(data.device?.categoria);
+
+  function normalizeDeviceCategory(value) {
+    const category = String(value || "").toLowerCase().trim();
+
+    if (category.includes("notebook") || category.includes("laptop") || category.includes("portatile")) {
+      return "notebook";
+    }
+
+    if (category.includes("desktop") || category.includes("pc") || category.includes("computer")) {
+      return "desktop";
+    }
+
+    if (category.includes("smartphone") || category.includes("telefono") || category.includes("phone")) {
+      return "smartphone";
+    }
+
+    return "device";
+  }
+
+  function getDeviceIcon(category) {
+    if (category === "notebook") return "💻";
+    if (category === "desktop") return "🖥️";
+    if (category === "smartphone") return "📱";
+    return "🔧";
+  }
+
+  function getDeviceLabel(category) {
+    if (category === "notebook") return "Il tuo notebook";
+    if (category === "desktop") return "Il tuo PC";
+    if (category === "smartphone") return "Il tuo smartphone";
+    return "Il tuo dispositivo";
+  }
+
+  function getHeroText(category) {
+    if (category === "notebook") {
+      return "Il tuo notebook è sempre sotto controllo. Qui trovi garanzia, supporto e accessori utili per lavorare meglio.";
+    }
+
+    if (category === "desktop") {
+      return "Il tuo PC è sempre sotto controllo. Qui trovi garanzia, supporto e prodotti utili per completare la tua postazione.";
+    }
+
+    if (category === "smartphone") {
+      return "Il tuo smartphone è sempre sotto controllo. Qui trovi garanzia, assistenza e accessori consigliati.";
+    }
+
+    return "Il tuo dispositivo è sempre sotto controllo. Qui trovi garanzia, assistenza e prodotti consigliati.";
+  }
+
+  function getOfferIntro(category) {
+    if (category === "notebook") {
+      return "Accessori e prodotti selezionati per il tuo notebook: mouse, borse, hub, supporti e alimentazione.";
+    }
+
+    if (category === "desktop") {
+      return "Accessori e prodotti selezionati per il tuo PC: monitor, tastiere, webcam, audio e postazione.";
+    }
+
+    if (category === "smartphone") {
+      return "Accessori e prodotti selezionati in base al tuo smartphone.";
+    }
+
+    return "Accessori e prodotti selezionati in base al tuo dispositivo.";
+  }
+
+  function getSupportIntro(category) {
+    if (category === "notebook") {
+      return "Per supporto sul tuo notebook, configurazioni, backup, garanzia o consigli sugli accessori, contattaci direttamente su WhatsApp.";
+    }
+
+    if (category === "desktop") {
+      return "Per supporto sul tuo PC, configurazioni, periferiche, garanzia o consigli sulla postazione, contattaci direttamente su WhatsApp.";
+    }
+
+    if (category === "smartphone") {
+      return "Per supporto sul tuo smartphone, configurazioni, garanzia o consigli sugli accessori, contattaci direttamente su WhatsApp.";
+    }
+
+    return "Per supporto sul tuo dispositivo, configurazioni, garanzia o consigli sugli accessori, contattaci direttamente su WhatsApp.";
+  }
+
+
 
   const allOffers = useMemo(() => {
     const merged = [
@@ -702,8 +785,7 @@ export default function CustomerPage() {
 
               <h1 style={styles.title}>Ciao {data.customer?.nome || customerName || ""} 👋</h1>
               <div style={styles.subtitle}>
-                Il tuo dispositivo è sempre sotto controllo. Qui trovi garanzia,
-                assistenza e accessori consigliati per il tuo dispositivo.
+                {getHeroText(primaryCategory)}
               </div>
 
               {showIosInstallGuide && (
@@ -717,7 +799,7 @@ export default function CustomerPage() {
 
             <section style={styles.card}>
               <div style={{ fontSize: "14px", color: "#93c5fd", marginBottom: "8px", fontWeight: "bold" }}>
-                📱💻 Il tuo dispositivo
+                {getDeviceIcon(primaryCategory)} {getDeviceLabel(primaryCategory)}
               </div>
               <h2 style={{ margin: "0 0 10px", fontSize: "24px" }}>
                 {deviceName || "Dispositivo non disponibile"}
@@ -796,7 +878,7 @@ export default function CustomerPage() {
           <>
             <h1 style={{ marginTop: 0 }}>🎁 Per te</h1>
             <p style={{ color: "#cbd5e1", lineHeight: 1.5 }}>
-              Accessori e prodotti selezionati in base al tuo dispositivo.
+              {getOfferIntro(primaryCategory)}
             </p>
 
             {allOffers.length === 0 ? (
@@ -811,12 +893,26 @@ export default function CustomerPage() {
 
         {tab === "devices" && (
           <>
-            <h1 style={{ marginTop: 0 }}>📱 Dispositivi</h1>
+            <h1 style={{ marginTop: 0 }}>📱💻🖥️ Dispositivi</h1>
             {data.devices.length === 0 ? (
               <div style={styles.card}>Nessun dispositivo registrato.</div>
             ) : (
               data.devices.map((device, index) => (
                 <section key={index} style={styles.card}>
+                  <div style={{
+                    display: "inline-block",
+                    background: "rgba(96,165,250,.18)",
+                    border: "1px solid rgba(147,197,253,.28)",
+                    color: "#bfdbfe",
+                    borderRadius: "999px",
+                    padding: "6px 10px",
+                    fontSize: "13px",
+                    fontWeight: "bold",
+                    marginBottom: "10px",
+                  }}>
+                    {getDeviceIcon(normalizeDeviceCategory(device.categoria))} {getDeviceLabel(normalizeDeviceCategory(device.categoria))}
+                  </div>
+
                   <h2 style={{ margin: "0 0 8px" }}>
                     {device.marca} {device.modello}
                   </h2>
@@ -867,8 +963,7 @@ export default function CustomerPage() {
             <section style={styles.card}>
               <h2 style={{ marginTop: 0 }}>Siamo qui per aiutarti</h2>
               <p style={{ color: "#cbd5e1", lineHeight: 1.5 }}>
-                Per supporto sul tuo dispositivo, configurazioni, garanzia o
-                consigli sugli accessori, contattaci direttamente su WhatsApp.
+                {getSupportIntro(primaryCategory)}
               </p>
               <button
                 onClick={openWhatsApp}

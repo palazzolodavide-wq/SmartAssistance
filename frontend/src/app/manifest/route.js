@@ -6,7 +6,7 @@ export async function GET(request) {
   const manifest = {
     name: "Smart Assistance",
     short_name: "Smart",
-    description: "Assistenza, garanzia, offerte e supporto per smartphone, notebook e PC.",
+    description: "Assistenza, garanzia, offerte e supporto per smartphone, notebook, desktop e PC.",
     start_url: startUrl,
     scope: "/",
     display: "standalone",
@@ -17,31 +17,31 @@ export async function GET(request) {
     categories: ["shopping", "utilities", "productivity"],
     icons: [
       {
-        src: "/icons/sa-icon-192.png?v=39",
+        src: "/icons/sa-icon-192.png?v=40",
         sizes: "192x192",
         type: "image/png",
         purpose: "any"
       },
       {
-        src: "/icons/sa-icon-512.png?v=39",
+        src: "/icons/sa-icon-512.png?v=40",
         sizes: "512x512",
         type: "image/png",
         purpose: "any"
       },
       {
-        src: "/icons/sa-maskable-192.png?v=39",
+        src: "/icons/sa-maskable-192.png?v=40",
         sizes: "192x192",
         type: "image/png",
         purpose: "maskable"
       },
       {
-        src: "/icons/sa-maskable-512.png?v=39",
+        src: "/icons/sa-maskable-512.png?v=40",
         sizes: "512x512",
         type: "image/png",
         purpose: "maskable"
       },
       {
-        src: "/icons/apple-touch-icon.png?v=39",
+        src: "/icons/apple-touch-icon.png?v=40",
         sizes: "180x180",
         type: "image/png",
         purpose: "any"
@@ -55,7 +55,7 @@ export async function GET(request) {
         url: startUrl,
         icons: [
           {
-            src: "/icons/sa-icon-192.png?v=39",
+            src: "/icons/sa-icon-192.png?v=40",
             sizes: "192x192",
             type: "image/png"
           }

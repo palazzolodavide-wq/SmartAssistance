@@ -22,14 +22,14 @@ const BRANDS = [
 const PRODUCT_CATEGORIES = [
   { value: "smartphone", label: "Smartphone" },
   { value: "notebook", label: "Notebook" },
-  { value: "desktop", label: "Desktop" },
+  { value: "desktop", label: "Desktop / PC fisso" },
 ];
 
 const OFFER_CATEGORIES = [
   { value: "accessori", label: "Accessori" },
   { value: "smartphone", label: "Smartphone" },
   { value: "notebook", label: "Notebook" },
-  { value: "desktop", label: "Desktop" },
+  { value: "desktop", label: "Desktop / PC fisso" },
   { value: "casa", label: "Casa" },
   { value: "gaming", label: "Gaming" },
   { value: "audio", label: "Audio" },
@@ -258,6 +258,44 @@ export default function Home() {
     if (!value) return "-";
 
     return new Date(value).toLocaleDateString("it-IT");
+  }
+
+  function normalizeDeviceCategory(value) {
+    const category = String(value || "").toLowerCase().trim();
+
+    if (category.includes("notebook") || category.includes("laptop") || category.includes("portatile")) {
+      return "notebook";
+    }
+
+    if (category.includes("desktop") || category.includes("pc") || category.includes("computer")) {
+      return "desktop";
+    }
+
+    if (category.includes("smartphone") || category.includes("telefono") || category.includes("phone")) {
+      return "smartphone";
+    }
+
+    return "device";
+  }
+
+  function getDeviceIcon(category) {
+    const normalized = normalizeDeviceCategory(category);
+
+    if (normalized === "notebook") return "💻";
+    if (normalized === "desktop") return "🖥️";
+    if (normalized === "smartphone") return "📱";
+
+    return "🔧";
+  }
+
+  function getDeviceCategoryLabel(category) {
+    const normalized = normalizeDeviceCategory(category);
+
+    if (normalized === "notebook") return "Notebook";
+    if (normalized === "desktop") return "Desktop / PC";
+    if (normalized === "smartphone") return "Smartphone";
+
+    return "Dispositivo";
   }
 
   const expiring30 = useMemo(
@@ -2415,7 +2453,7 @@ export default function Home() {
                             {device.nome} {device.cognome}
                           </div>
                           <div className="row-subtitle">
-                            {device.marca} {device.modello}
+                            {getDeviceIcon(device.categoria)} {device.marca} {device.modello}
                           </div>
                         </div>
                         <span className={getWarrantyClass(device.scadenza_garanzia)}>
@@ -2906,8 +2944,8 @@ export default function Home() {
                                           {customerDevices.map((device) => (
                                             <div key={device.id} className="mini-device-item">
                                               <div>
-                                                <strong>{device.marca} {device.modello}</strong>
-                                                <span>{device.categoria || "-"} · Garanzia {formatDate(device.scadenza_garanzia)}</span>
+                                                <strong>{getDeviceIcon(device.categoria)} {device.marca} {device.modello}</strong>
+                                                <span>{getDeviceCategoryLabel(device.categoria)} · Garanzia {formatDate(device.scadenza_garanzia)}</span>
                                               </div>
                                               <div className="action-row">
                                                 <button type="button" className="small-button" onClick={() => editDevice(device)}>
@@ -3093,8 +3131,8 @@ export default function Home() {
                             <div className="row-subtitle">{device.customer_code || "-"}</div>
                           </td>
                           <td>
-                            <div className="row-title">{device.marca} {device.modello}</div>
-                            <div className="row-subtitle">{device.categoria || "-"}</div>
+                            <div className="row-title">{getDeviceIcon(device.categoria)} {device.marca} {device.modello}</div>
+                            <div className="row-subtitle">{getDeviceCategoryLabel(device.categoria)}</div>
                           </td>
                           <td>
                             <span className={getWarrantyClass(device.scadenza_garanzia)}>

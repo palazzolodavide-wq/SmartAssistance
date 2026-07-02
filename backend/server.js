@@ -169,6 +169,68 @@ function authenticateAdmin(req, res, next) {
 }
 
 
+function normalizeDeviceCategory(value) {
+  const category = String(value || "").toLowerCase().trim();
+
+  if (category.includes("notebook") || category.includes("laptop") || category.includes("portatile")) {
+    return "notebook";
+  }
+
+  if (category.includes("desktop") || category.includes("pc") || category.includes("computer")) {
+    return "desktop";
+  }
+
+  if (category.includes("smartphone") || category.includes("telefono") || category.includes("phone")) {
+    return "smartphone";
+  }
+
+  return "device";
+}
+
+function getDeviceAccessorySearches(device) {
+  const category = normalizeDeviceCategory(device?.categoria);
+  const base = `${device?.marca || ""} ${device?.modello || ""}`.trim();
+  const fallbackBase = base || "accessori tecnologia";
+
+  if (category === "notebook") {
+    return [
+      `${fallbackBase} mouse wireless`,
+      `${fallbackBase} borsa notebook`,
+      `${fallbackBase} hub usb c`,
+      `${fallbackBase} supporto notebook`,
+      `${fallbackBase} caricatore compatibile`
+    ];
+  }
+
+  if (category === "desktop") {
+    return [
+      `${fallbackBase} tastiera mouse wireless`,
+      `${fallbackBase} monitor pc`,
+      `${fallbackBase} webcam`,
+      `${fallbackBase} casse pc`,
+      `${fallbackBase} gruppo continuità`
+    ];
+  }
+
+  if (category === "smartphone") {
+    return [
+      `${fallbackBase} cover`,
+      `${fallbackBase} pellicola vetro`,
+      `${fallbackBase} caricatore usb-c`,
+      `${fallbackBase} power bank`,
+      `${fallbackBase} auricolari bluetooth`
+    ];
+  }
+
+  return [
+    `${fallbackBase} accessori`,
+    `${fallbackBase} caricatore`,
+    `${fallbackBase} custodia`,
+    `${fallbackBase} supporto`,
+    `${fallbackBase} bluetooth`
+  ];
+}
+
 function normalizeWhatsAppChatId(phone) {
   const raw = String(phone || "").replace(/\D/g, "");
 
@@ -546,13 +608,7 @@ app.get("/api/app/:token", async (req, res) => {
 
     if (device?.marca && device?.modello) {
       try {
-        const searches = [
-          `${device.marca} ${device.modello} cover`,
-          `${device.marca} ${device.modello} pellicola vetro`,
-          `${device.marca} ${device.modello} caricatore usb-c`,
-          `${device.marca} ${device.modello} power bank`,
-          `${device.marca} ${device.modello} auricolari bluetooth`
-        ];
+        const searches = getDeviceAccessorySearches(device);
 
         const creatorResponses = await Promise.all(
           searches.map(searchCreators)
@@ -566,7 +622,7 @@ app.get("/api/app/:token", async (req, res) => {
           )
           .map(item => ({
             asin: item.asin || item.ASIN,
-            categoria: device.categoria || "accessori",
+            categoria: normalizeDeviceCategory(device.categoria),
             partner: "amazon",
             titolo:
               item.itemInfo?.title?.displayValue ||
