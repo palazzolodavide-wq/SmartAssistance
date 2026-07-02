@@ -102,6 +102,7 @@ export default function Home() {
   const [amazonSearch, setAmazonSearch] = useState("");
   const [amazonResults, setAmazonResults] = useState([]);
   const [amazonSearchMessage, setAmazonSearchMessage] = useState("");
+  const [amazonImportCategories, setAmazonImportCategories] = useState({});
 
   const [clickStats, setClickStats] = useState({
     summary: {
@@ -917,6 +918,18 @@ export default function Home() {
       .filter((item) => item && item.affiliate_url);
   }
 
+  function getAmazonImportKey(item, index = "") {
+    const normalized = normalizeAmazonItem(item);
+
+    return normalized?.asin || normalized?.affiliate_url || normalized?.titolo || String(index);
+  }
+
+  function getAmazonImportCategory(item, index = "") {
+    const key = getAmazonImportKey(item, index);
+
+    return amazonImportCategories[key] || offerForm.categoria || "accessori";
+  }
+
   async function searchAmazon() {
     const query = amazonSearch.trim();
 
@@ -927,6 +940,7 @@ export default function Home() {
 
     try {
       setAmazonResults([]);
+      setAmazonImportCategories({});
       setAmazonSearchMessage("Ricerca in corso...");
 
       const res = await apiFetch(
@@ -947,15 +961,24 @@ export default function Home() {
       }
 
       setAmazonResults(items);
-      setAmazonSearchMessage(`${items.length} prodotti trovati.`);
+
+      const defaultCategory = offerForm.categoria || "accessori";
+      setAmazonImportCategories(
+        Object.fromEntries(
+          items.map((item, index) => [getAmazonImportKey(item, index), defaultCategory])
+        )
+      );
+
+      setAmazonSearchMessage(`${items.length} prodotti trovati. Scegli la categoria prima di importare.`);
     } catch (err) {
       setAmazonResults([]);
       setAmazonSearchMessage(`Ricerca non disponibile: ${err.message}`);
     }
   }
 
-  async function importAmazonProduct(item) {
+  async function importAmazonProduct(item, selectedCategory = "accessori") {
     const normalized = normalizeAmazonItem(item);
+    const importCategory = selectedCategory || "accessori";
 
     if (!normalized?.affiliate_url) {
       alert("Prodotto non importabile: link affiliato mancante");
@@ -964,7 +987,7 @@ export default function Home() {
 
     try {
       const offer = {
-        categoria: "accessori",
+        categoria: importCategory,
         partner: "amazon",
         titolo: normalized.titolo,
         descrizione: normalized.descrizione,
@@ -987,7 +1010,7 @@ export default function Home() {
         return;
       }
 
-      alert("Prodotto importato");
+      alert(`Prodotto importato in categoria: ${getOfferCategoryLabel(importCategory)}`);
       await loadData();
     } catch (err) {
       alert(err.message);
@@ -3413,8 +3436,32 @@ export default function Home() {
                           <div className="row-title">
                             {item.titolo || "Prodotto Amazon"}
                           </div>
-                          <button type="button" className="soft-button" onClick={() => importAmazonProduct(item)}>
-                            Importa
+
+                          <div className="field">
+                            <label>Categoria importazione</label>
+                            <select
+                              value={getAmazonImportCategory(item, index)}
+                              onChange={(e) =>
+                                setAmazonImportCategories({
+                                  ...amazonImportCategories,
+                                  [getAmazonImportKey(item, index)]: e.target.value,
+                                })
+                              }
+                            >
+                              {OFFER_CATEGORIES.map((category) => (
+                                <option key={category.value} value={category.value}>
+                                  {category.label}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+
+                          <button
+                            type="button"
+                            className="soft-button"
+                            onClick={() => importAmazonProduct(item, getAmazonImportCategory(item, index))}
+                          >
+                            Importa in {getOfferCategoryLabel(getAmazonImportCategory(item, index))}
                           </button>
                         </article>
                       ))}
