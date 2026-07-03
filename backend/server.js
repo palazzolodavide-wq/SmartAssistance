@@ -110,6 +110,1316 @@ app.post("/api/login", async (req, res) => {
   }
 });
 
+
+/*
+|--------------------------------------------------------------------------
+| LIVE OFFERS HELPERS
+|--------------------------------------------------------------------------
+*/
+
+const DEFAULT_LIVE_SETTINGS = {
+  enabled: true,
+  telegram_auto_import_enabled: false,
+  amazon_tag: process.env.AMAZON_ASSOCIATE_TAG || "",
+  ttl_hours: 24,
+  max_visible: 20
+};
+
+function normalizeChannelRef(value) {
+  return String(value || "")
+    .trim()
+    .replace(/^https?:\/\/t\.me\//i, "@")
+    .replace(/^t\.me\//i, "@")
+    .replace(/\s+/g, "");
+}
+
+function normalizeAmazonTag(value) {
+  return String(value || "")
+    .trim()
+    .replace(/[^\w-]/g, "");
+}
+
+function clampNumber(value, fallback, min, max) {
+  const parsed = Number.parseInt(value, 10);
+
+  if (!Number.isFinite(parsed)) {
+    return fallback;
+  }
+
+  return Math.min(max, Math.max(min, parsed));
+}
+
+async function ensureLiveSettings() {
+  try {
+    await pool.query(
+      `
+      INSERT INTO live_offer_settings (
+        id,
+        enabled,
+        telegram_auto_import_enabled,
+        amazon_tag,
+        ttl_hours,
+        max_visible
+      )
+      VALUES (true,$1,$2,$3,$4,$5)
+      ON CONFLICT (id) DO NOTHING
+      `,
+      [
+        DEFAULT_LIVE_SETTINGS.enabled,
+        DEFAULT_LIVE_SETTINGS.telegram_auto_import_enabled,
+        DEFAULT_LIVE_SETTINGS.amazon_tag,
+        DEFAULT_LIVE_SETTINGS.ttl_hours,
+        DEFAULT_LIVE_SETTINGS.max_visible
+      ]
+    );
+
+    const result = await pool.query(
+      `
+      SELECT
+        enabled,
+        telegram_auto_import_enabled,
+        COALESCE(amazon_tag, '') AS amazon_tag,
+        COALESCE(ttl_hours, 24)::int AS ttl_hours,
+        COALESCE(max_visible, 20)::int AS max_visible,
+        updated_at
+      FROM live_offer_settings
+      WHERE id = true
+      `
+    );
+
+    return result.rows[0] || DEFAULT_LIVE_SETTINGS;
+  } catch (err) {
+    console.error("LIVE SETTINGS ERROR:", err.message);
+    return DEFAULT_LIVE_SETTINGS;
+  }
+}
+
+async function expireOldLiveOffers() {
+  try {
+    await pool.query(
+      `
+      UPDATE live_offers
+      SET status = 'expired'
+      WHERE status = 'published'
+        AND expires_at <= NOW()
+      `
+    );
+  } catch (err) {
+    console.error("LIVE EXPIRE ERROR:", err.message);
+  }
+}
+
+function extractUrlsFromText(text) {
+  const matches = String(text || "").match(/https?:\/\/[^\s<>"')]+/gi) || [];
+
+  return matches.map((url) => url.replace(/[.,;:!?]+$/g, ""));
+}
+
+function extractAsinFromText(value) {
+  const text = decodeUrlRepeated(String(value || ""));
+
+  const patterns = [
+    /(?:\/dp\/|\/gp\/product\/|\/product\/)([A-Z0-9]{10})(?:[/?#&]|$)/i,
+    /(?:asin=|ASIN%2F)([A-Z0-9]{10})/i,
+    /\b(B0[A-Z0-9]{8})\b/i
+  ];
+
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+
+    if (match?.[1]) {
+      return match[1].toUpperCase();
+    }
+  }
+
+  return "";
+}
+
+function decodeUrlRepeated(value, maxPasses = 4) {
+  let current = String(value || "");
+
+  for (let i = 0; i < maxPasses; i += 1) {
+    try {
+      const decoded = decodeURIComponent(current);
+
+      if (decoded === current) {
+        break;
+      }
+
+      current = decoded;
+    } catch (err) {
+      break;
+    }
+  }
+
+  return current;
+}
+
+function trimResolvedUrl(value) {
+  return String(value || "")
+    .trim()
+    .replace(/[<>"')\]\s]+$/g, "")
+    .replace(/[.,;:!?]+$/g, "");
+}
+
+function isUnsafeRedirectHost(hostname) {
+  const host = String(hostname || "").toLowerCase();
+
+  if (!host) {
+    return true;
+  }
+
+  if (
+    host === "localhost" ||
+    host === "host.docker.internal" ||
+    host.endsWith(".local") ||
+    host === "::1"
+  ) {
+    return true;
+  }
+
+  if (/^127\./.test(host) || /^10\./.test(host) || /^192\.168\./.test(host)) {
+    return true;
+  }
+
+  const private172 = host.match(/^172\.(\d+)\./);
+
+  if (private172) {
+    const second = Number.parseInt(private172[1], 10);
+
+    if (second >= 16 && second <= 31) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function isAmazonUrl(value) {
+  try {
+    const parsed = new URL(value);
+    const host = parsed.hostname.toLowerCase();
+
+    return host === "amazon.it" || host.endsWith(".amazon.it");
+  } catch (err) {
+    return /amazon\.it/i.test(String(value || ""));
+  }
+}
+
+function extractEmbeddedAmazonUrl(value) {
+  const decoded = decodeUrlRepeated(value);
+  const candidates = [String(value || ""), decoded];
+
+  try {
+    const parsed = new URL(String(value || ""));
+
+    for (const [, paramValue] of parsed.searchParams.entries()) {
+      candidates.push(paramValue);
+      candidates.push(decodeUrlRepeated(paramValue));
+    }
+  } catch (err) {
+    // Non è un URL parsabile, proviamo comunque con il testo grezzo.
+  }
+
+  for (const candidate of candidates) {
+    const normalized = decodeUrlRepeated(candidate);
+    const match = normalized.match(/https?:\/\/(?:www\.)?amazon\.it\/[^\s<>"')\]]+/i);
+
+    if (match?.[0]) {
+      return trimResolvedUrl(match[0]);
+    }
+  }
+
+  return "";
+}
+
+function canResolveExternalUrl(value) {
+  try {
+    const parsed = new URL(String(value || ""));
+
+    if (!["http:", "https:"].includes(parsed.protocol)) {
+      return false;
+    }
+
+    return !isUnsafeRedirectHost(parsed.hostname);
+  } catch (err) {
+    return false;
+  }
+}
+
+async function fetchRedirectLocation(url, method = "HEAD") {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 7000);
+
+  try {
+    const response = await fetch(url, {
+      method,
+      redirect: "manual",
+      signal: controller.signal,
+      headers: {
+        "User-Agent": "Mozilla/5.0 SmartAssistance/1.0",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+      }
+    });
+
+    const location = response.headers.get("location");
+
+    if (location) {
+      return new URL(location, url).toString();
+    }
+
+    if (response.url && response.url !== url) {
+      return response.url;
+    }
+
+    return "";
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function resolveAmazonUrl(url) {
+  const rawUrl = trimResolvedUrl(url);
+
+  if (!rawUrl) {
+    return rawUrl;
+  }
+
+  const embeddedAmazonUrl = extractEmbeddedAmazonUrl(rawUrl);
+
+  if (embeddedAmazonUrl) {
+    return embeddedAmazonUrl;
+  }
+
+  if (isAmazonUrl(rawUrl)) {
+    return rawUrl;
+  }
+
+  if (!canResolveExternalUrl(rawUrl)) {
+    return rawUrl;
+  }
+
+  let currentUrl = rawUrl;
+
+  try {
+    for (let hop = 0; hop < 7; hop += 1) {
+      const embedded = extractEmbeddedAmazonUrl(currentUrl);
+
+      if (embedded) {
+        return embedded;
+      }
+
+      if (isAmazonUrl(currentUrl)) {
+        return currentUrl;
+      }
+
+      if (!canResolveExternalUrl(currentUrl)) {
+        return rawUrl;
+      }
+
+      let nextUrl = "";
+
+      try {
+        nextUrl = await fetchRedirectLocation(currentUrl, "HEAD");
+      } catch (headErr) {
+        nextUrl = await fetchRedirectLocation(currentUrl, "GET");
+      }
+
+      if (!nextUrl || nextUrl === currentUrl) {
+        return currentUrl;
+      }
+
+      currentUrl = trimResolvedUrl(nextUrl);
+    }
+
+    return currentUrl;
+  } catch (err) {
+    console.error("LIVE URL RESOLVE ERROR:", err.message);
+    return rawUrl;
+  }
+}
+
+async function extractAmazonAsinFromMessage(text) {
+  const directAsin = extractAsinFromText(text);
+
+  if (directAsin) {
+    return {
+      asin: directAsin,
+      originalUrl: ""
+    };
+  }
+
+  const urls = extractUrlsFromText(text);
+
+  for (const url of urls) {
+    const resolvedUrl = await resolveAmazonUrl(url);
+    const asin = extractAsinFromText(resolvedUrl) || extractAsinFromText(url);
+
+    if (asin) {
+      return {
+        asin,
+        originalUrl: resolvedUrl || url
+      };
+    }
+  }
+
+  return {
+    asin: "",
+    originalUrl: urls[0] || ""
+  };
+}
+
+function buildAmazonAffiliateUrl(asin, amazonTag) {
+  const cleanAsin = String(asin || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  const cleanTag = normalizeAmazonTag(amazonTag);
+
+  if (!cleanAsin || !cleanTag) {
+    return "";
+  }
+
+  return `https://www.amazon.it/dp/${cleanAsin}?tag=${encodeURIComponent(cleanTag)}`;
+}
+
+function parseEuroNumber(value) {
+  const normalized = String(value || "")
+    .replace(/\./g, "")
+    .replace(",", ".")
+    .replace(/[^\d.]/g, "");
+
+  const parsed = Number.parseFloat(normalized);
+
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function formatEuroAmount(value) {
+  const parsed = typeof value === "number" ? value : parseEuroNumber(value);
+
+  if (!Number.isFinite(parsed)) {
+    return "";
+  }
+
+  return `${parsed.toFixed(2).replace(".", ",")} €`;
+}
+
+function extractEuroAmounts(text) {
+  const value = String(text || "");
+  const regex = /(?:€|EUR)?\s*([0-9]{1,4}(?:[.,][0-9]{1,2})?)\s*(?:€|euro|EUR)/gi;
+  const amounts = [];
+  let match;
+
+  while ((match = regex.exec(value)) !== null) {
+    const amount = parseEuroNumber(match[1]);
+
+    if (!Number.isFinite(amount) || amount <= 0) {
+      continue;
+    }
+
+    const beforeStart = Math.max(0, match.index - 80);
+    const afterEnd = Math.min(value.length, match.index + match[0].length + 80);
+    const before = value.slice(beforeStart, match.index).toLowerCase();
+    const after = value.slice(match.index + match[0].length, afterEnd).toLowerCase();
+    const context = value.slice(beforeStart, afterEnd).toLowerCase();
+
+    amounts.push({
+      raw: match[0].trim(),
+      amount,
+      index: match.index,
+      before,
+      after,
+      context
+    });
+  }
+
+  return amounts;
+}
+
+function extractExplicitDiscountPercent(text) {
+  const value = String(text || "");
+  const patterns = [
+    /(?:-|−)\s*([1-9][0-9]?)\s*%/i,
+    /sconto\s*(?:del\s*)?([1-9][0-9]?)\s*%/i,
+    /risparmi(?:o|a)?\s*(?:del\s*)?([1-9][0-9]?)\s*%/i,
+    /coupon\s*(?:del\s*)?([1-9][0-9]?)\s*%/i
+  ];
+
+  for (const pattern of patterns) {
+    const match = value.match(pattern);
+    const parsed = Number.parseInt(match?.[1] || "", 10);
+
+    if (Number.isFinite(parsed) && parsed > 0 && parsed < 100) {
+      return parsed;
+    }
+  }
+
+  return null;
+}
+
+function extractFirstEuroAmountFromPattern(value, pattern) {
+  const match = String(value || "").match(pattern);
+
+  if (!match?.[1]) {
+    return null;
+  }
+
+  return parseEuroNumber(match[1]);
+}
+
+function extractLivePriceByExplicitPatterns(text) {
+  const value = String(text || "").replace(/\s+/g, " ");
+
+  const currentInstead = value.match(
+    /(?:prezzo\s*(?:finale|finito)?|solo|a\s+soli|offerta|ora|adesso)?\s*([0-9]{1,4}(?:[.,][0-9]{1,2})?)\s*(?:€|euro|EUR)\s*(?:invece\s+di|anzich[eéè]|al\s+posto\s+di|prima\s+di|da)\s*([0-9]{1,4}(?:[.,][0-9]{1,2})?)\s*(?:€|euro|EUR)/i
+  );
+
+  if (currentInstead?.[1] && currentInstead?.[2]) {
+    const currentAmount = parseEuroNumber(currentInstead[1]);
+    const previousAmount = parseEuroNumber(currentInstead[2]);
+
+    if (currentAmount && previousAmount && previousAmount > currentAmount) {
+      return {
+        currentAmount,
+        previousAmount
+      };
+    }
+  }
+
+  const fromTo = value.match(
+    /(?:da|prezzo\s+normale|prezzo\s+di\s+listino|listino|prima|era)\s*([0-9]{1,4}(?:[.,][0-9]{1,2})?)\s*(?:€|euro|EUR).*?(?:a|ora|adesso|prezzo\s*(?:finale|finito)?)\s*([0-9]{1,4}(?:[.,][0-9]{1,2})?)\s*(?:€|euro|EUR)/i
+  );
+
+  if (fromTo?.[1] && fromTo?.[2]) {
+    const previousAmount = parseEuroNumber(fromTo[1]);
+    const currentAmount = parseEuroNumber(fromTo[2]);
+
+    if (currentAmount && previousAmount && previousAmount > currentAmount) {
+      return {
+        currentAmount,
+        previousAmount
+      };
+    }
+  }
+
+  const normalWithCoupon = value.match(
+    /(?:prezzo\s+(?:normale|di\s+listino|iniziale|precedente)|listino|prima|era|da)\s*([0-9]{1,4}(?:[.,][0-9]{1,2})?)\s*(?:€|euro|EUR).*?(?:coupon|codice|sconto|buono|voucher|extra)\s*(?:da|di)?\s*([0-9]{1,4}(?:[.,][0-9]{1,2})?)\s*(?:€|euro|EUR)/i
+  );
+
+  if (normalWithCoupon?.[1] && normalWithCoupon?.[2]) {
+    const previousAmount = parseEuroNumber(normalWithCoupon[1]);
+    const discountAmount = parseEuroNumber(normalWithCoupon[2]);
+
+    if (previousAmount && discountAmount && previousAmount > discountAmount) {
+      return {
+        currentAmount: previousAmount - discountAmount,
+        previousAmount
+      };
+    }
+  }
+
+  const couponThenNormal = value.match(
+    /(?:coupon|codice|sconto|buono|voucher|extra)\s*(?:da|di)?\s*([0-9]{1,4}(?:[.,][0-9]{1,2})?)\s*(?:€|euro|EUR).*?(?:prezzo\s+(?:normale|di\s+listino|iniziale|precedente)|listino|prima|era|da)\s*([0-9]{1,4}(?:[.,][0-9]{1,2})?)\s*(?:€|euro|EUR)/i
+  );
+
+  if (couponThenNormal?.[1] && couponThenNormal?.[2]) {
+    const discountAmount = parseEuroNumber(couponThenNormal[1]);
+    const previousAmount = parseEuroNumber(couponThenNormal[2]);
+
+    if (previousAmount && discountAmount && previousAmount > discountAmount) {
+      return {
+        currentAmount: previousAmount - discountAmount,
+        previousAmount
+      };
+    }
+  }
+
+  const finalWithCoupon = value.match(
+    /(?:prezzo\s*(?:finale|finito)?|finale|totale|paghi|a\s+soli|solo)\s*([0-9]{1,4}(?:[.,][0-9]{1,2})?)\s*(?:€|euro|EUR).*?(?:coupon|codice|sconto|buono|voucher|extra)\s*(?:da|di)?\s*([0-9]{1,4}(?:[.,][0-9]{1,2})?)\s*(?:€|euro|EUR)/i
+  );
+
+  if (finalWithCoupon?.[1] && finalWithCoupon?.[2]) {
+    const currentAmount = parseEuroNumber(finalWithCoupon[1]);
+    const discountAmount = parseEuroNumber(finalWithCoupon[2]);
+
+    if (currentAmount && discountAmount) {
+      return {
+        currentAmount,
+        previousAmount: currentAmount + discountAmount
+      };
+    }
+  }
+
+  const normalWithPercent = value.match(
+    /(?:prezzo\s+(?:normale|di\s+listino|iniziale|precedente)|listino|prima|era|da)\s*([0-9]{1,4}(?:[.,][0-9]{1,2})?)\s*(?:€|euro|EUR).*?(?:-|−|sconto\s*(?:del)?|coupon\s*(?:del)?)\s*([1-9][0-9]?)\s*%/i
+  );
+
+  if (normalWithPercent?.[1] && normalWithPercent?.[2]) {
+    const previousAmount = parseEuroNumber(normalWithPercent[1]);
+    const percent = Number.parseInt(normalWithPercent[2], 10);
+
+    if (previousAmount && percent > 0 && percent < 100) {
+      return {
+        currentAmount: previousAmount * (1 - (percent / 100)),
+        previousAmount,
+        discountPercent: percent
+      };
+    }
+  }
+
+  return null;
+}
+
+function isPreviousPriceAmount(item) {
+  const before = item.before || "";
+
+  return /(invece\s+di|anzich[eéè]|prima|listino|precedente|barrato|era|costava|prezzo\s+(?:normale|di\s+partenza|iniziale|consigliato|di\s+listino)|da\s*)$/i.test(before) ||
+    /(invece\s+di|anzich[eéè]|prima|listino|precedente|barrato|era|costava|prezzo\s+(?:normale|di\s+partenza|iniziale|consigliato|di\s+listino))/i.test(before);
+}
+
+function isCurrentPriceAmount(item) {
+  const before = item.before || "";
+
+  if (/(coupon|codice|buono|voucher|sconto|risparmi|risparmio|extra)\s*(?:da|di)?\s*$/i.test(before)) {
+    return false;
+  }
+
+  return /(prezzo\s*(?:finale|finito)?|finale|totale|paghi|pagamento|offerta|ora|adesso|solo|a\s+soli|dopo\s+(?:coupon|codice|sconto)|post\s+(?:coupon|sconto)|scende\s+a|viene\s+a|a\s*)$/i.test(before) ||
+    /(prezzo\s*(?:finale|finito)|finale|totale|paghi|pagamento|offerta|ora|adesso|solo|a\s+soli|dopo\s+(?:coupon|codice|sconto)|post\s+(?:coupon|sconto)|scende\s+a|viene\s+a)/i.test(before);
+}
+
+function isDiscountAmount(item) {
+  const before = item.before || "";
+
+  if (isCurrentPriceAmount(item)) {
+    return false;
+  }
+
+  return /(coupon|codice|buono|sconto|risparmi|risparmio|voucher|extra|meno|scalare|applica)\s*(?:da|di)?\s*$/i.test(before) ||
+    /(coupon|codice|buono|sconto|risparmi|risparmio|voucher|extra|meno|scalare|applica)/i.test(before);
+}
+
+function extractLivePriceInfo(text, fallbackPriceText = "") {
+  const explicitPattern = extractLivePriceByExplicitPatterns(text);
+
+  if (explicitPattern?.currentAmount) {
+    const explicitDiscount = explicitPattern.discountPercent || extractExplicitDiscountPercent(text);
+    const computedDiscount =
+      explicitPattern.previousAmount && explicitPattern.previousAmount > explicitPattern.currentAmount
+        ? Math.round(((explicitPattern.previousAmount - explicitPattern.currentAmount) / explicitPattern.previousAmount) * 100)
+        : null;
+
+    return {
+      priceText: formatEuroAmount(explicitPattern.currentAmount),
+      previousPriceText: explicitPattern.previousAmount ? formatEuroAmount(explicitPattern.previousAmount) : "",
+      discountPercent: explicitDiscount || computedDiscount || null
+    };
+  }
+
+  const amounts = extractEuroAmounts(text);
+  const explicitDiscount = extractExplicitDiscountPercent(text);
+
+  const currentCandidates = amounts.filter((item) => isCurrentPriceAmount(item));
+  const previousCandidates = amounts.filter((item) => isPreviousPriceAmount(item));
+  const discountCandidates = amounts.filter((item) => isDiscountAmount(item));
+
+  const discountAmount =
+    discountCandidates.length > 0
+      ? Math.max(...discountCandidates.map((item) => item.amount))
+      : null;
+
+  const nonDiscountAmounts = amounts.filter((item) => !discountCandidates.includes(item));
+
+  let currentAmount =
+    currentCandidates.length > 0
+      ? currentCandidates[currentCandidates.length - 1].amount
+      : null;
+
+  let previousAmount =
+    previousCandidates.length > 0
+      ? Math.max(...previousCandidates.map((item) => item.amount))
+      : null;
+
+  if (!previousAmount && nonDiscountAmounts.length >= 2) {
+    previousAmount = Math.max(...nonDiscountAmounts.map((item) => item.amount));
+  }
+
+  if (!currentAmount && previousAmount && discountAmount && previousAmount > discountAmount) {
+    currentAmount = previousAmount - discountAmount;
+  }
+
+  if (!currentAmount && previousAmount && explicitDiscount) {
+    currentAmount = previousAmount * (1 - (explicitDiscount / 100));
+  }
+
+  if (!currentAmount && nonDiscountAmounts.length === 1 && !isPreviousPriceAmount(nonDiscountAmounts[0])) {
+    currentAmount = nonDiscountAmounts[0].amount;
+  }
+
+  if (!currentAmount && nonDiscountAmounts.length >= 2) {
+    const lowerAmounts = nonDiscountAmounts
+      .map((item) => item.amount)
+      .filter((amount) => !previousAmount || amount < previousAmount);
+
+    if (lowerAmounts.length > 0) {
+      currentAmount = Math.min(...lowerAmounts);
+    }
+  }
+
+  if (!currentAmount && fallbackPriceText) {
+    currentAmount = parseEuroNumber(fallbackPriceText);
+  }
+
+  if (!previousAmount && currentAmount && discountAmount) {
+    previousAmount = currentAmount + discountAmount;
+  }
+
+  if (previousAmount && currentAmount && previousAmount <= currentAmount) {
+    previousAmount = null;
+  }
+
+  const computedDiscount =
+    previousAmount && currentAmount && previousAmount > currentAmount
+      ? Math.round(((previousAmount - currentAmount) / previousAmount) * 100)
+      : null;
+
+  return {
+    priceText: currentAmount ? formatEuroAmount(currentAmount) : "",
+    previousPriceText: previousAmount ? formatEuroAmount(previousAmount) : "",
+    discountPercent: explicitDiscount || computedDiscount || null
+  };
+}
+
+function extractPriceText(text) {
+  return extractLivePriceInfo(text).priceText;
+}
+
+function extractCouponText(text) {
+  const lines = String(text || "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  const couponLine = lines.find((line) =>
+    /(coupon|codice|sconto|promo|buono)/i.test(line)
+  );
+
+  return couponLine ? couponLine.slice(0, 120) : "";
+}
+
+function inferLiveOfferCategory(text) {
+  const value = String(text || "").toLowerCase();
+
+  if (/(notebook|laptop|portatile|macbook|thinkpad|ideapad)/i.test(value)) {
+    return "notebook";
+  }
+
+  if (/(desktop|pc fisso|monitor|tastiera|mouse|webcam|ups|stampante)/i.test(value)) {
+    return "desktop";
+  }
+
+  if (/(smartphone|telefono|iphone|samsung|xiaomi|oppo|cover|pellicola|caricatore usb-c|power bank)/i.test(value)) {
+    return "smartphone";
+  }
+
+  if (/(cuffie|auricolari|soundbar|speaker|audio|bluetooth)/i.test(value)) {
+    return "audio";
+  }
+
+  if (/(gaming|playstation|xbox|nintendo|controller|console)/i.test(value)) {
+    return "gaming";
+  }
+
+  if (/(casa|aspirapolvere|friggitrice|lavatrice|domotica|lampada|philips hue)/i.test(value)) {
+    return "casa";
+  }
+
+  return "generale";
+}
+
+function buildLiveOfferTitle(text, asin) {
+  const cleanedLines = String(text || "")
+    .replace(/https?:\/\/[^\s<>"')]+/gi, "")
+    .split(/\r?\n/)
+    .map((line) => line
+      .replace(/[🔥💥🚨✅⭐️⭐🎁👉➡️🔗]/g, "")
+      .replace(/\s+/g, " ")
+      .trim()
+    )
+    .filter((line) =>
+      line &&
+      !/^prezzo\b/i.test(line) &&
+      !/^coupon\b/i.test(line) &&
+      !/^codice\b/i.test(line)
+    );
+
+  const title = cleanedLines[0] || `Offerta Amazon ${asin}`;
+
+  return title.slice(0, 150);
+}
+
+function getTelegramMessagePayload(update) {
+  return update?.channel_post || update?.message || update?.edited_channel_post || update?.edited_message || null;
+}
+
+function getTelegramMessageText(message) {
+  return String(message?.text || message?.caption || "").trim();
+}
+
+function getTelegramChannelRef(message) {
+  const chat = message?.chat || {};
+
+  if (chat.username) {
+    return `@${chat.username}`;
+  }
+
+  if (chat.id) {
+    return String(chat.id);
+  }
+
+  return "";
+}
+
+async function isAllowedLiveSource(channelRef) {
+  const normalized = normalizeChannelRef(channelRef);
+
+  if (!normalized) {
+    return false;
+  }
+
+  const result = await pool.query(
+    `
+    SELECT id
+    FROM live_offer_sources
+    WHERE enabled = true
+      AND (
+        LOWER(channel_ref) = LOWER($1)
+        OR LOWER(REPLACE(channel_ref, '@', '')) = LOWER(REPLACE($1, '@', ''))
+      )
+    LIMIT 1
+    `,
+    [normalized]
+  );
+
+  return result.rows.length > 0;
+}
+
+
+function firstNonEmpty(...values) {
+  for (const value of values) {
+    if (value !== undefined && value !== null && String(value).trim() !== "") {
+      return String(value).trim();
+    }
+  }
+
+  return "";
+}
+
+function normalizeAmazonItemsResponse(data) {
+  const items =
+    data?.SearchResult?.Items ||
+    data?.searchResult?.items ||
+    data?.items ||
+    data?.results ||
+    data?.Items ||
+    [];
+
+  return Array.isArray(items) ? items : [];
+}
+
+function readNestedValue(object, paths) {
+  for (const path of paths) {
+    const value = path
+      .split(".")
+      .reduce((current, key) => current?.[key], object);
+
+    if (value !== undefined && value !== null && String(value).trim() !== "") {
+      return String(value).trim();
+    }
+  }
+
+  return "";
+}
+
+function readNestedNumber(object, paths) {
+  for (const path of paths) {
+    const value = path
+      .split(".")
+      .reduce((current, key) => current?.[key], object);
+
+    if (value !== undefined && value !== null && value !== "") {
+      const parsed = Number.parseFloat(String(value).replace(",", "."));
+
+      if (Number.isFinite(parsed)) {
+        return parsed;
+      }
+    }
+  }
+
+  return null;
+}
+
+function normalizeDiscountPercent(value) {
+  const parsed = Number.parseInt(String(value || "").replace(/[^0-9]/g, ""), 10);
+
+  if (!Number.isFinite(parsed) || parsed <= 0 || parsed >= 100) {
+    return null;
+  }
+
+  return parsed;
+}
+
+function normalizeAmazonProductInfo(item) {
+  if (!item) {
+    return null;
+  }
+
+  const asin = firstNonEmpty(
+    item.asin,
+    item.ASIN,
+    readNestedValue(item, ["item.asin", "Item.ASIN"])
+  ).toUpperCase();
+
+  const title = firstNonEmpty(
+    item.titolo,
+    item.title,
+    readNestedValue(item, [
+      "itemInfo.title.displayValue",
+      "ItemInfo.Title.DisplayValue",
+      "itemInfo.Title.DisplayValue",
+      "ItemInfo.Title.DisplayValue"
+    ])
+  );
+
+  const imageUrl = firstNonEmpty(
+    item.image_url,
+    readNestedValue(item, [
+      "images.primary.large.url",
+      "images.primary.medium.url",
+      "images.primary.small.url",
+      "Images.Primary.Large.URL",
+      "Images.Primary.Medium.URL",
+      "Images.Primary.Small.URL"
+    ])
+  );
+
+  const priceText = firstNonEmpty(
+    item.prezzo,
+    item.price,
+    readNestedValue(item, [
+      "offers.listings.0.price.displayAmount",
+      "Offers.Listings.0.Price.DisplayAmount",
+      "offers.summaries.0.lowestPrice.displayAmount",
+      "Offers.Summaries.0.LowestPrice.DisplayAmount"
+    ])
+  );
+
+  const previousPriceText = firstNonEmpty(
+    item.prezzo_precedente,
+    item.previous_price,
+    item.list_price,
+    readNestedValue(item, [
+      "offers.listings.0.savingBasis.displayAmount",
+      "Offers.Listings.0.SavingBasis.DisplayAmount",
+      "offers.listings.0.price.savingBasis.displayAmount",
+      "Offers.Listings.0.Price.SavingBasis.DisplayAmount",
+      "offers.summaries.0.highestPrice.displayAmount",
+      "Offers.Summaries.0.HighestPrice.DisplayAmount"
+    ])
+  );
+
+  const discountFromAmazon = normalizeDiscountPercent(firstNonEmpty(
+    item.sconto_percentuale,
+    item.discount_percent,
+    readNestedValue(item, [
+      "offers.listings.0.price.savings.percentage",
+      "Offers.Listings.0.Price.Savings.Percentage",
+      "offers.listings.0.price.Savings.Percentage",
+      "Offers.Listings.0.Price.savings.percentage"
+    ])
+  ));
+
+  const currentAmount = parseEuroNumber(priceText);
+  const previousAmount = parseEuroNumber(previousPriceText);
+  const computedDiscount =
+    previousAmount && currentAmount && previousAmount > currentAmount
+      ? Math.round(((previousAmount - currentAmount) / previousAmount) * 100)
+      : null;
+
+  return {
+    asin,
+    title,
+    imageUrl,
+    priceText,
+    previousPriceText,
+    discountPercent: discountFromAmazon || normalizeDiscountPercent(computedDiscount)
+  };
+}
+
+async function enrichLiveOfferFromAmazon(asin) {
+  const cleanAsin = String(asin || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+
+  if (!cleanAsin) {
+    return {
+      title: "",
+      imageUrl: "",
+      priceText: "",
+      previousPriceText: "",
+      discountPercent: null
+    };
+  }
+
+  try {
+    const data = await searchCreators(cleanAsin);
+    const items = normalizeAmazonItemsResponse(data);
+
+    const normalizedItems = items
+      .map(normalizeAmazonProductInfo)
+      .filter(Boolean);
+
+    const exactMatch =
+      normalizedItems.find((item) => item.asin === cleanAsin) ||
+      normalizedItems[0];
+
+    if (!exactMatch) {
+      return {
+        title: "",
+        imageUrl: "",
+        priceText: "",
+        previousPriceText: "",
+        discountPercent: null
+      };
+    }
+
+    return {
+      title: exactMatch.title || "",
+      imageUrl: exactMatch.imageUrl || "",
+      priceText: exactMatch.priceText || "",
+      previousPriceText: exactMatch.previousPriceText || "",
+      discountPercent: exactMatch.discountPercent || null
+    };
+  } catch (err) {
+    console.error("LIVE AMAZON ENRICH ERROR:", err.message);
+
+    return {
+      title: "",
+      imageUrl: "",
+      priceText: "",
+      previousPriceText: "",
+      discountPercent: null
+    };
+  }
+}
+
+
+async function saveLiveOfferFromText({
+  text,
+  sourceChannel = "manual",
+  telegramUpdateId = null,
+  telegramMessageId = null,
+  settings = null
+}) {
+  const liveSettings = settings || await ensureLiveSettings();
+  const amazonTag = normalizeAmazonTag(liveSettings.amazon_tag);
+
+  if (!amazonTag) {
+    return {
+      success: false,
+      skipped: true,
+      reason: "Tag affiliato Amazon mancante"
+    };
+  }
+
+  const { asin, originalUrl } = await extractAmazonAsinFromMessage(text);
+
+  if (!asin) {
+    return {
+      success: false,
+      skipped: true,
+      reason: "ASIN Amazon non trovato"
+    };
+  }
+
+  const affiliateUrl = buildAmazonAffiliateUrl(asin, amazonTag);
+
+  if (!affiliateUrl) {
+    return {
+      success: false,
+      skipped: true,
+      reason: "Link affiliato non generato"
+    };
+  }
+
+  const amazonInfo = await enrichLiveOfferFromAmazon(asin);
+  const priceInfo = extractLivePriceInfo(text, amazonInfo.priceText);
+
+  const existingResult = await pool.query(
+    `
+    SELECT id
+    FROM live_offers
+    WHERE asin = $1
+      AND status = 'published'
+      AND expires_at > NOW()
+    LIMIT 1
+    `,
+    [asin]
+  );
+
+  if (existingResult.rows.length > 0) {
+    await pool.query(
+      `
+      UPDATE live_offers
+      SET
+        last_seen_at = NOW(),
+        raw_text = COALESCE(NULLIF($2, ''), raw_text),
+        title = COALESCE(NULLIF($3, ''), title),
+        price_text = COALESCE(NULLIF($4, ''), price_text),
+        previous_price_text = COALESCE(NULLIF($5, ''), previous_price_text),
+        discount_percent = COALESCE($6, discount_percent),
+        image_url = COALESCE(NULLIF($7, ''), image_url)
+      WHERE id = $1
+      `,
+      [
+        existingResult.rows[0].id,
+        text || "",
+        amazonInfo.title || "",
+        priceInfo.priceText || amazonInfo.priceText || "",
+        priceInfo.previousPriceText || amazonInfo.previousPriceText || "",
+        priceInfo.discountPercent || amazonInfo.discountPercent,
+        amazonInfo.imageUrl || ""
+      ]
+    );
+
+    return {
+      success: true,
+      duplicate: true,
+      enriched: Boolean(
+        amazonInfo.title ||
+        amazonInfo.priceText ||
+        amazonInfo.previousPriceText ||
+        amazonInfo.discountPercent ||
+        amazonInfo.imageUrl
+      ),
+      offer_id: existingResult.rows[0].id,
+      asin,
+      price_info: {
+        priceText: priceInfo.priceText || amazonInfo.priceText || "",
+        previousPriceText: priceInfo.previousPriceText || amazonInfo.previousPriceText || "",
+        discountPercent: priceInfo.discountPercent || amazonInfo.discountPercent || null
+      }
+    };
+  }
+
+  const ttlHours = clampNumber(liveSettings.ttl_hours, 24, 1, 168);
+  const title = amazonInfo.title || buildLiveOfferTitle(text, asin);
+  const priceText = priceInfo.priceText || amazonInfo.priceText;
+  const previousPriceText = priceInfo.previousPriceText || amazonInfo.previousPriceText;
+  const discountPercent = priceInfo.discountPercent || amazonInfo.discountPercent;
+  const imageUrl = amazonInfo.imageUrl;
+  const couponText = extractCouponText(text);
+  const category = inferLiveOfferCategory(text);
+
+  const result = await pool.query(
+    `
+    INSERT INTO live_offers (
+      source_type,
+      source_channel,
+      telegram_update_id,
+      telegram_message_id,
+      raw_text,
+      asin,
+      title,
+      price_text,
+      previous_price_text,
+      discount_percent,
+      coupon_text,
+      original_url,
+      affiliate_url,
+      image_url,
+      category,
+      status,
+      expires_at
+    )
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,'published',NOW() + ($16 || ' hours')::interval)
+    RETURNING *
+    `,
+    [
+      telegramUpdateId ? "telegram" : "manual",
+      normalizeChannelRef(sourceChannel) || "manual",
+      telegramUpdateId,
+      telegramMessageId,
+      text || "",
+      asin,
+      title,
+      priceText || null,
+      previousPriceText || null,
+      discountPercent,
+      couponText || null,
+      originalUrl || null,
+      affiliateUrl,
+      imageUrl || null,
+      category,
+      ttlHours
+    ]
+  );
+
+  return {
+    success: true,
+    offer: result.rows[0],
+    price_info: {
+      priceText: priceText || "",
+      previousPriceText: previousPriceText || "",
+      discountPercent: discountPercent || null
+    }
+  };
+}
+
+async function getPublicLiveOffers() {
+  const settings = await ensureLiveSettings();
+
+  if (!settings.enabled) {
+    return [];
+  }
+
+  await expireOldLiveOffers();
+
+  const maxVisible = clampNumber(settings.max_visible, 20, 1, 100);
+
+  const result = await pool.query(
+    `
+    SELECT
+      asin,
+      category AS categoria,
+      'amazon' AS partner,
+      title AS titolo,
+      COALESCE(NULLIF(coupon_text, ''), title) AS descrizione,
+      affiliate_url,
+      image_url,
+      price_text AS prezzo,
+      previous_price_text AS prezzo_precedente,
+      discount_percent AS sconto_percentuale,
+      'live' AS tipo_offerta,
+      'live_telegram' AS source,
+      expires_at
+    FROM live_offers
+    WHERE status = 'published'
+      AND expires_at > NOW()
+      AND affiliate_url IS NOT NULL
+      AND TRIM(affiliate_url) <> ''
+    ORDER BY imported_at DESC
+    LIMIT $1
+    `,
+    [maxVisible]
+  );
+
+  return result.rows;
+}
+
+let telegramPollRunning = false;
+
+async function pollTelegramLiveOffers() {
+  if (telegramPollRunning) {
+    return;
+  }
+
+  telegramPollRunning = true;
+
+  try {
+    const token = process.env.TELEGRAM_BOT_TOKEN;
+
+    if (!token) {
+      return;
+    }
+
+    const settings = await ensureLiveSettings();
+
+    if (!settings.telegram_auto_import_enabled || !settings.enabled) {
+      return;
+    }
+
+    const stateResult = await pool.query(
+      `
+      SELECT COALESCE(value, '0') AS value
+      FROM app_runtime_state
+      WHERE key = 'telegram_live_last_update_id'
+      `
+    );
+
+    const lastUpdateId = Number.parseInt(stateResult.rows[0]?.value || "0", 10) || 0;
+    const offset = lastUpdateId > 0 ? lastUpdateId + 1 : undefined;
+    const params = new URLSearchParams();
+
+    if (offset) {
+      params.set("offset", String(offset));
+    }
+
+    params.set("timeout", "0");
+    params.set("allowed_updates", JSON.stringify(["channel_post", "message", "edited_channel_post", "edited_message"]));
+
+    const response = await fetch(`https://api.telegram.org/bot${token}/getUpdates?${params.toString()}`);
+
+    if (!response.ok) {
+      throw new Error(`Telegram HTTP ${response.status}`);
+    }
+
+    const data = await response.json();
+
+    if (!data.ok || !Array.isArray(data.result)) {
+      throw new Error("Risposta Telegram non valida");
+    }
+
+    let maxUpdateId = lastUpdateId;
+
+    for (const update of data.result) {
+      if (Number.isFinite(update.update_id)) {
+        maxUpdateId = Math.max(maxUpdateId, update.update_id);
+      }
+
+      const message = getTelegramMessagePayload(update);
+      const text = getTelegramMessageText(message);
+      const channelRef = getTelegramChannelRef(message);
+
+      if (!text || !channelRef) {
+        continue;
+      }
+
+      const allowed = await isAllowedLiveSource(channelRef);
+
+      if (!allowed) {
+        continue;
+      }
+
+      const importResult = await saveLiveOfferFromText({
+        text,
+        sourceChannel: channelRef,
+        telegramUpdateId: update.update_id,
+        telegramMessageId: message?.message_id || null,
+        settings
+      });
+
+      if (importResult.success) {
+        console.log("LIVE OFFER IMPORT:", channelRef, importResult.asin || importResult.offer?.asin || "ok");
+      } else {
+        console.log("LIVE OFFER SKIP:", channelRef, importResult.reason || "skip");
+      }
+    }
+
+    if (maxUpdateId > lastUpdateId) {
+      await pool.query(
+        `
+        INSERT INTO app_runtime_state (key, value, updated_at)
+        VALUES ('telegram_live_last_update_id', $1, NOW())
+        ON CONFLICT (key)
+        DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
+        `,
+        [String(maxUpdateId)]
+      );
+    }
+  } catch (err) {
+    console.error("TELEGRAM LIVE POLL ERROR:", err.message);
+  } finally {
+    telegramPollRunning = false;
+  }
+}
+
+
 /*
 |--------------------------------------------------------------------------
 | ADMIN AUTH MIDDLEWARE
@@ -683,6 +1993,28 @@ app.get("/api/app/:token", async (req, res) => {
       trendingOffers = [];
     }
 
+    let liveOffers = [];
+    let liveSettings = {
+      enabled: true,
+      ttl_hours: 24,
+      max_visible: 20
+    };
+
+    try {
+      const currentLiveSettings = await ensureLiveSettings();
+
+      liveSettings = {
+        enabled: Boolean(currentLiveSettings.enabled),
+        ttl_hours: Number(currentLiveSettings.ttl_hours || 24),
+        max_visible: Number(currentLiveSettings.max_visible || 20)
+      };
+
+      liveOffers = liveSettings.enabled ? await getPublicLiveOffers() : [];
+    } catch (liveErr) {
+      console.error("LIVE OFFERS ERROR:", liveErr.message);
+      liveOffers = [];
+    }
+
     const recommendedOffers = [
       ...new Map(
         [...manualOffers, ...amazonRecommendedOffers]
@@ -703,7 +2035,9 @@ app.get("/api/app/:token", async (req, res) => {
       devices: devicesResult.rows,
       recommendedOffers,
       manualOffers,
-      trendingOffers
+      trendingOffers,
+      liveOffers,
+      liveSettings
     });
   } catch (err) {
     res.status(500).json({
@@ -2042,6 +3376,304 @@ app.delete("/api/offers/:id", async (req, res) => {
   }
 });
 
+
+/*
+|--------------------------------------------------------------------------
+| ADMIN - LIVE OFFERS
+|--------------------------------------------------------------------------
+*/
+
+app.get("/api/live-offers", async (req, res) => {
+  try {
+    const settings = await ensureLiveSettings();
+    await expireOldLiveOffers();
+
+    const sourcesResult = await pool.query(
+      `
+      SELECT
+        id,
+        channel_ref,
+        label,
+        enabled,
+        created_at,
+        updated_at
+      FROM live_offer_sources
+      ORDER BY created_at DESC
+      `
+    );
+
+    const offersResult = await pool.query(
+      `
+      SELECT
+        id,
+        source_type,
+        source_channel,
+        asin,
+        title,
+        price_text,
+        previous_price_text,
+        discount_percent,
+        coupon_text,
+        affiliate_url,
+        category,
+        status,
+        imported_at,
+        expires_at,
+        last_seen_at
+      FROM live_offers
+      ORDER BY imported_at DESC
+      LIMIT 80
+      `
+    );
+
+    res.json({
+      success: true,
+      settings,
+      sources: sourcesResult.rows,
+      offers: offersResult.rows
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      error: err.message
+    });
+  }
+});
+
+app.put("/api/live-offers/settings", async (req, res) => {
+  try {
+    const current = await ensureLiveSettings();
+    const {
+      enabled,
+      telegram_auto_import_enabled,
+      amazon_tag,
+      ttl_hours,
+      max_visible
+    } = req.body || {};
+
+    const nextSettings = {
+      enabled: typeof enabled === "boolean" ? enabled : current.enabled,
+      telegram_auto_import_enabled:
+        typeof telegram_auto_import_enabled === "boolean"
+          ? telegram_auto_import_enabled
+          : current.telegram_auto_import_enabled,
+      amazon_tag: normalizeAmazonTag(amazon_tag ?? current.amazon_tag),
+      ttl_hours: clampNumber(ttl_hours, current.ttl_hours || 24, 1, 168),
+      max_visible: clampNumber(max_visible, current.max_visible || 20, 1, 100)
+    };
+
+    const result = await pool.query(
+      `
+      INSERT INTO live_offer_settings (
+        id,
+        enabled,
+        telegram_auto_import_enabled,
+        amazon_tag,
+        ttl_hours,
+        max_visible,
+        updated_at
+      )
+      VALUES (true,$1,$2,$3,$4,$5,NOW())
+      ON CONFLICT (id)
+      DO UPDATE SET
+        enabled = EXCLUDED.enabled,
+        telegram_auto_import_enabled = EXCLUDED.telegram_auto_import_enabled,
+        amazon_tag = EXCLUDED.amazon_tag,
+        ttl_hours = EXCLUDED.ttl_hours,
+        max_visible = EXCLUDED.max_visible,
+        updated_at = NOW()
+      RETURNING
+        enabled,
+        telegram_auto_import_enabled,
+        amazon_tag,
+        ttl_hours,
+        max_visible,
+        updated_at
+      `,
+      [
+        nextSettings.enabled,
+        nextSettings.telegram_auto_import_enabled,
+        nextSettings.amazon_tag,
+        nextSettings.ttl_hours,
+        nextSettings.max_visible
+      ]
+    );
+
+    res.json({
+      success: true,
+      settings: result.rows[0]
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      error: err.message
+    });
+  }
+});
+
+app.post("/api/live-offers/sources", async (req, res) => {
+  try {
+    const channelRef = normalizeChannelRef(req.body?.channel_ref);
+    const label = String(req.body?.label || "").trim();
+
+    if (!channelRef) {
+      return res.status(400).json({
+        success: false,
+        error: "Canale Telegram mancante"
+      });
+    }
+
+    const result = await pool.query(
+      `
+      INSERT INTO live_offer_sources (
+        channel_ref,
+        label,
+        enabled
+      )
+      VALUES ($1,$2,true)
+      ON CONFLICT (channel_ref)
+      DO UPDATE SET
+        label = COALESCE(NULLIF(EXCLUDED.label, ''), live_offer_sources.label),
+        enabled = true,
+        updated_at = NOW()
+      RETURNING *
+      `,
+      [channelRef, label || channelRef]
+    );
+
+    res.json({
+      success: true,
+      source: result.rows[0]
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      error: err.message
+    });
+  }
+});
+
+app.put("/api/live-offers/sources/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const enabled = Boolean(req.body?.enabled);
+
+    const result = await pool.query(
+      `
+      UPDATE live_offer_sources
+      SET
+        enabled = $1,
+        updated_at = NOW()
+      WHERE id = $2
+      RETURNING *
+      `,
+      [enabled, id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: "Canale non trovato"
+      });
+    }
+
+    res.json({
+      success: true,
+      source: result.rows[0]
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      error: err.message
+    });
+  }
+});
+
+app.delete("/api/live-offers/sources/:id", async (req, res) => {
+  try {
+    await pool.query(
+      "DELETE FROM live_offer_sources WHERE id = $1",
+      [req.params.id]
+    );
+
+    res.json({
+      success: true
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      error: err.message
+    });
+  }
+});
+
+app.post("/api/live-offers/import-text", async (req, res) => {
+  try {
+    const text = String(req.body?.text || "").trim();
+    const sourceChannel = normalizeChannelRef(req.body?.source_channel || "manual-test");
+
+    if (!text) {
+      return res.status(400).json({
+        success: false,
+        error: "Testo offerta mancante"
+      });
+    }
+
+    const result = await saveLiveOfferFromText({
+      text,
+      sourceChannel
+    });
+
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      error: err.message
+    });
+  }
+});
+
+app.put("/api/live-offers/:id/status", async (req, res) => {
+  try {
+    const status = String(req.body?.status || "").trim();
+
+    if (!["published", "hidden", "expired", "rejected"].includes(status)) {
+      return res.status(400).json({
+        success: false,
+        error: "Stato non valido"
+      });
+    }
+
+    const result = await pool.query(
+      `
+      UPDATE live_offers
+      SET status = $1
+      WHERE id = $2
+      RETURNING *
+      `,
+      [status, req.params.id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: "Offerta live non trovata"
+      });
+    }
+
+    res.json({
+      success: true,
+      offer: result.rows[0]
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      error: err.message
+    });
+  }
+});
+
+
 app.get("/api/amazon/search", async (req, res) => {
   try {
 
@@ -2133,6 +3765,11 @@ app.listen(process.env.PORT || 3006, () => {
       process.env.PORT || 3006
     }`
   );
+
+  const pollSeconds = clampNumber(process.env.TELEGRAM_POLL_SECONDS || 60, 60, 30, 3600);
+
+  setInterval(pollTelegramLiveOffers, pollSeconds * 1000);
+  setTimeout(pollTelegramLiveOffers, 5000);
 });
 
 

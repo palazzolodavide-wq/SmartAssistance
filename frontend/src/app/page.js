@@ -70,10 +70,24 @@ const EMPTY_OFFER_FORM = {
   image_url: "",
 };
 
+const EMPTY_LIVE_SETTINGS = {
+  enabled: true,
+  telegram_auto_import_enabled: false,
+  amazon_tag: "",
+  ttl_hours: 24,
+  max_visible: 20,
+};
+
+const EMPTY_LIVE_SOURCE_FORM = {
+  channel_ref: "",
+  label: "",
+};
+
 const NAV_ITEMS = [
   { id: "dashboard", label: "Dashboard", icon: "📊" },
   { id: "customers", label: "Clienti & Device", icon: "👥" },
   { id: "offers", label: "Offerte", icon: "🎁" },
+  { id: "live", label: "Offerte Live", icon: "🔥" },
   { id: "stats", label: "Statistiche", icon: "📈" },
 ];
 
@@ -103,6 +117,13 @@ export default function Home() {
   const [amazonResults, setAmazonResults] = useState([]);
   const [amazonSearchMessage, setAmazonSearchMessage] = useState("");
   const [amazonImportCategories, setAmazonImportCategories] = useState({});
+
+  const [liveSettings, setLiveSettings] = useState(EMPTY_LIVE_SETTINGS);
+  const [liveSources, setLiveSources] = useState([]);
+  const [liveOffers, setLiveOffers] = useState([]);
+  const [liveSourceForm, setLiveSourceForm] = useState(EMPTY_LIVE_SOURCE_FORM);
+  const [liveImportText, setLiveImportText] = useState("");
+  const [liveMessage, setLiveMessage] = useState("");
 
   const [clickStats, setClickStats] = useState({
     summary: {
@@ -193,21 +214,29 @@ export default function Home() {
     try {
       setLoading(true);
 
-      const [usersRes, devicesRes, offersRes] = await Promise.all([
+      const [usersRes, devicesRes, offersRes, liveRes] = await Promise.all([
         apiFetch(`${API_URL}/api/users`),
         apiFetch(`${API_URL}/api/devices`),
         apiFetch(`${API_URL}/api/offers`),
+        apiFetch(`${API_URL}/api/live-offers`),
       ]);
 
-      const [usersData, devicesData, offersData] = await Promise.all([
+      const [usersData, devicesData, offersData, liveData] = await Promise.all([
         usersRes.json(),
         devicesRes.json(),
         offersRes.json(),
+        liveRes.json(),
       ]);
 
       setUsers(Array.isArray(usersData) ? usersData : []);
       setDevices(Array.isArray(devicesData) ? devicesData : []);
       setOffers(Array.isArray(offersData) ? offersData : []);
+
+      if (liveData?.success) {
+        setLiveSettings({ ...EMPTY_LIVE_SETTINGS, ...(liveData.settings || {}) });
+        setLiveSources(Array.isArray(liveData.sources) ? liveData.sources : []);
+        setLiveOffers(Array.isArray(liveData.offers) ? liveData.offers : []);
+      }
 
       try {
         const statsRes = await apiFetch(`${API_URL}/api/stats/clicks`);
@@ -1011,6 +1040,199 @@ export default function Home() {
       }
 
       alert(`Prodotto importato in categoria: ${getOfferCategoryLabel(importCategory)}`);
+      await loadData();
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
+
+  function getLiveStatusLabel(status) {
+    if (status === "published") return "Pubblicata";
+    if (status === "hidden") return "Nascosta";
+    if (status === "expired") return "Scaduta";
+    if (status === "rejected") return "Scartata";
+
+    return status || "-";
+  }
+
+  function formatLiveDate(value) {
+    if (!value) return "-";
+
+    return new Date(value).toLocaleString("it-IT", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  }
+
+  async function saveLiveSettings(e) {
+    e.preventDefault();
+
+    try {
+      const payload = {
+        enabled: Boolean(liveSettings.enabled),
+        telegram_auto_import_enabled: Boolean(liveSettings.telegram_auto_import_enabled),
+        amazon_tag: String(liveSettings.amazon_tag || "").trim(),
+        ttl_hours: Number(liveSettings.ttl_hours || 24),
+        max_visible: Number(liveSettings.max_visible || 20),
+      };
+
+      const res = await apiFetch(`${API_URL}/api/live-offers/settings`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json();
+
+      if (!data.success) {
+        alert(data.error || "Errore salvataggio impostazioni live");
+        return;
+      }
+
+      setLiveSettings({ ...EMPTY_LIVE_SETTINGS, ...(data.settings || {}) });
+      setLiveMessage("Impostazioni Offerte Live salvate");
+      await loadData();
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
+  async function addLiveSource(e) {
+    e.preventDefault();
+
+    try {
+      if (!liveSourceForm.channel_ref.trim()) {
+        alert("Inserisci il canale Telegram, esempio @nomecanale");
+        return;
+      }
+
+      const res = await apiFetch(`${API_URL}/api/live-offers/sources`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(liveSourceForm),
+      });
+
+      const data = await res.json();
+
+      if (!data.success) {
+        alert(data.error || "Errore salvataggio canale");
+        return;
+      }
+
+      setLiveSourceForm(EMPTY_LIVE_SOURCE_FORM);
+      setLiveMessage("Canale Telegram salvato");
+      await loadData();
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
+  async function toggleLiveSource(source) {
+    try {
+      const res = await apiFetch(`${API_URL}/api/live-offers/sources/${source.id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ enabled: !source.enabled }),
+      });
+
+      const data = await res.json();
+
+      if (!data.success) {
+        alert(data.error || "Errore aggiornamento canale");
+        return;
+      }
+
+      await loadData();
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
+  async function deleteLiveSource(id) {
+    if (!confirm("Eliminare questo canale Telegram dalle fonti live?")) {
+      return;
+    }
+
+    try {
+      const res = await apiFetch(`${API_URL}/api/live-offers/sources/${id}`, {
+        method: "DELETE",
+      });
+
+      const data = await res.json();
+
+      if (!data.success) {
+        alert(data.error || "Errore eliminazione canale");
+        return;
+      }
+
+      await loadData();
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
+  async function importLiveText(e) {
+    e.preventDefault();
+
+    try {
+      if (!liveImportText.trim()) {
+        alert("Incolla un messaggio Telegram o un link Amazon da testare");
+        return;
+      }
+
+      const res = await apiFetch(`${API_URL}/api/live-offers/import-text`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          text: liveImportText,
+          source_channel: "manual-test",
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!data.success && !data.duplicate) {
+        alert(data.reason || data.error || "Import test non riuscito");
+        return;
+      }
+
+      setLiveImportText("");
+      setLiveMessage(data.duplicate ? "Offerta già presente: aggiornata vista" : "Offerta live importata");
+      await loadData();
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
+  async function updateLiveOfferStatus(offer, status) {
+    try {
+      const res = await apiFetch(`${API_URL}/api/live-offers/${offer.id}/status`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ status }),
+      });
+
+      const data = await res.json();
+
+      if (!data.success) {
+        alert(data.error || "Errore aggiornamento offerta live");
+        return;
+      }
+
       await loadData();
     } catch (err) {
       alert(err.message);
@@ -3561,6 +3783,266 @@ export default function Home() {
                       </tbody>
                     </table>
                   </div>
+                </div>
+              </div>
+            </section>
+          </>
+        )}
+
+        {!loading && activeSection === "live" && (
+          <>
+            <section className="section-grid">
+              <div className="panel">
+                <div className="panel-header">
+                  <div>
+                    <h2 className="panel-title">Offerte Live</h2>
+                    <div className="panel-subtitle">
+                      Pubblicazione automatica da canali Telegram autorizzati.
+                    </div>
+                  </div>
+                  <button type="button" className="soft-button" onClick={loadData}>
+                    Aggiorna
+                  </button>
+                </div>
+
+                {liveMessage && (
+                  <div className="inline-info-box" style={{ marginBottom: "14px" }}>
+                    {liveMessage}
+                  </div>
+                )}
+
+                <form className="form-grid" onSubmit={saveLiveSettings}>
+                  <label className="checkbox-row">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(liveSettings.enabled)}
+                      onChange={(e) => setLiveSettings({ ...liveSettings, enabled: e.target.checked })}
+                    />
+                    <span>Mostra la sezione Offerte live nella WebApp cliente</span>
+                  </label>
+
+                  <label className="checkbox-row">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(liveSettings.telegram_auto_import_enabled)}
+                      onChange={(e) => setLiveSettings({ ...liveSettings, telegram_auto_import_enabled: e.target.checked })}
+                    />
+                    <span>Import automatico Telegram attivo</span>
+                  </label>
+
+                  <Field label="Tag affiliato Amazon">
+                    <input
+                      placeholder="esempio: tuotag-21"
+                      value={liveSettings.amazon_tag || ""}
+                      onChange={(e) => setLiveSettings({ ...liveSettings, amazon_tag: e.target.value })}
+                    />
+                  </Field>
+
+                  <Field label="Durata offerte live">
+                    <select
+                      value={String(liveSettings.ttl_hours || 24)}
+                      onChange={(e) => setLiveSettings({ ...liveSettings, ttl_hours: Number(e.target.value) })}
+                    >
+                      <option value="12">12 ore</option>
+                      <option value="24">24 ore</option>
+                      <option value="48">48 ore</option>
+                      <option value="72">72 ore</option>
+                    </select>
+                  </Field>
+
+                  <Field label="Massimo offerte visibili">
+                    <select
+                      value={String(liveSettings.max_visible || 20)}
+                      onChange={(e) => setLiveSettings({ ...liveSettings, max_visible: Number(e.target.value) })}
+                    >
+                      <option value="10">10 offerte</option>
+                      <option value="20">20 offerte</option>
+                      <option value="30">30 offerte</option>
+                      <option value="50">50 offerte</option>
+                    </select>
+                  </Field>
+
+                  <button type="submit" className="primary-button">
+                    Salva impostazioni live
+                  </button>
+                </form>
+
+                <div className="inline-info-box" style={{ marginTop: "14px" }}>
+                  <strong>Nota tecnica:</strong> il token del bot Telegram resta nel file backend <code>.env</code> come <code>TELEGRAM_BOT_TOKEN</code>.
+                  I canali sotto sono la whitelist da cui importare.
+                </div>
+              </div>
+
+              <div className="panel">
+                <div className="panel-header">
+                  <div>
+                    <h2 className="panel-title">Canali Telegram autorizzati</h2>
+                    <div className="panel-subtitle">
+                      Usa @nomecanale oppure ID numerico del canale.
+                    </div>
+                  </div>
+                </div>
+
+                <form className="form-grid" onSubmit={addLiveSource}>
+                  <Field label="Canale">
+                    <input
+                      placeholder="@nomecanale"
+                      value={liveSourceForm.channel_ref}
+                      onChange={(e) => setLiveSourceForm({ ...liveSourceForm, channel_ref: e.target.value })}
+                    />
+                  </Field>
+
+                  <Field label="Descrizione">
+                    <input
+                      placeholder="esempio: Offerte Amazon tech"
+                      value={liveSourceForm.label}
+                      onChange={(e) => setLiveSourceForm({ ...liveSourceForm, label: e.target.value })}
+                    />
+                  </Field>
+
+                  <button type="submit" className="primary-button">
+                    Aggiungi canale
+                  </button>
+                </form>
+
+                <div className="table-wrap" style={{ marginTop: "14px" }}>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Canale</th>
+                        <th>Stato</th>
+                        <th>Azioni</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {liveSources.length === 0 ? (
+                        <tr>
+                          <td colSpan="3">Nessun canale configurato.</td>
+                        </tr>
+                      ) : (
+                        liveSources.map((source) => (
+                          <tr key={source.id}>
+                            <td>
+                              <div className="row-title">{source.channel_ref}</div>
+                              <div className="row-subtitle">{source.label || "-"}</div>
+                            </td>
+                            <td>
+                              <span className={source.enabled ? "badge badge-green" : "badge badge-yellow"}>
+                                {source.enabled ? "Attivo" : "Disattivato"}
+                              </span>
+                            </td>
+                            <td>
+                              <div className="action-row">
+                                <button type="button" className="soft-button" onClick={() => toggleLiveSource(source)}>
+                                  {source.enabled ? "Disattiva" : "Attiva"}
+                                </button>
+                                <button type="button" className="danger-button" onClick={() => deleteLiveSource(source.id)}>
+                                  Elimina
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </section>
+
+            <section className="section-grid">
+              <div className="panel">
+                <div className="panel-header">
+                  <div>
+                    <h2 className="panel-title">Test importazione</h2>
+                    <div className="panel-subtitle">
+                      Incolla un post Telegram o un link Amazon per verificare estrazione ASIN e tag affiliato.
+                    </div>
+                  </div>
+                </div>
+
+                <form className="form-grid" onSubmit={importLiveText}>
+                  <Field label="Testo offerta">
+                    <textarea
+                      rows="7"
+                      placeholder="Incolla qui il messaggio Telegram..."
+                      value={liveImportText}
+                      onChange={(e) => setLiveImportText(e.target.value)}
+                    />
+                  </Field>
+
+                  <button type="submit" className="primary-button">
+                    Importa test live
+                  </button>
+                </form>
+              </div>
+
+              <div className="panel">
+                <div className="panel-header">
+                  <div>
+                    <h2 className="panel-title">Ultime offerte live</h2>
+                    <div className="panel-subtitle">
+                      {liveOffers.length} offerte registrate negli ultimi import.
+                    </div>
+                  </div>
+                </div>
+
+                <div className="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Offerta</th>
+                        <th>Fonte</th>
+                        <th>Stato</th>
+                        <th>Scadenza</th>
+                        <th>Azioni</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {liveOffers.length === 0 ? (
+                        <tr>
+                          <td colSpan="5">Nessuna offerta live importata.</td>
+                        </tr>
+                      ) : (
+                        liveOffers.map((offer) => (
+                          <tr key={offer.id}>
+                            <td>
+                              <div className="row-title">{offer.title || offer.asin}</div>
+                              <div className="row-subtitle">
+                                {offer.asin} · {offer.price_text || "prezzo non rilevato"}
+                              </div>
+                            </td>
+                            <td>
+                              <div className="row-title">{offer.source_channel || "-"}</div>
+                              <div className="row-subtitle">{offer.category || "generale"}</div>
+                            </td>
+                            <td>
+                              <span className={offer.status === "published" ? "badge badge-green" : "badge badge-yellow"}>
+                                {getLiveStatusLabel(offer.status)}
+                              </span>
+                            </td>
+                            <td>{formatLiveDate(offer.expires_at)}</td>
+                            <td>
+                              <div className="action-row">
+                                <button type="button" className="soft-button" onClick={() => openOfferLink({ affiliate_url: offer.affiliate_url })}>
+                                  Apri
+                                </button>
+                                {offer.status === "published" ? (
+                                  <button type="button" className="danger-button" onClick={() => updateLiveOfferStatus(offer, "hidden")}>
+                                    Nascondi
+                                  </button>
+                                ) : (
+                                  <button type="button" className="soft-button" onClick={() => updateLiveOfferStatus(offer, "published")}>
+                                    Pubblica
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             </section>

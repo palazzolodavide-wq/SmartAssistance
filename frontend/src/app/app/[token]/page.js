@@ -16,6 +16,12 @@ export default function CustomerPage() {
     recommendedOffers: [],
     manualOffers: [],
     trendingOffers: [],
+    liveOffers: [],
+    liveSettings: {
+      enabled: true,
+      ttl_hours: 24,
+      max_visible: 20,
+    },
   });
 
   const [tab, setTab] = useState("home");
@@ -49,6 +55,12 @@ export default function CustomerPage() {
           recommendedOffers: json.recommendedOffers || [],
           manualOffers: json.manualOffers || [],
           trendingOffers: json.trendingOffers || [],
+          liveOffers: json.liveOffers || [],
+          liveSettings: json.liveSettings || {
+            enabled: true,
+            ttl_hours: 24,
+            max_visible: 20,
+          },
         });
       } catch (err) {
         setError(err.message || "Errore caricamento dati");
@@ -61,6 +73,12 @@ export default function CustomerPage() {
       load();
     }
   }, [token]);
+
+  useEffect(() => {
+    if (tab === "live" && data.liveSettings?.enabled === false) {
+      setTab("home");
+    }
+  }, [tab, data.liveSettings?.enabled]);
 
   useEffect(() => {
     if (!token) return;
@@ -105,7 +123,7 @@ export default function CustomerPage() {
       document.head.appendChild(appleIcon);
     }
 
-    appleIcon.href = "/icons/apple-touch-icon.png?v=49";
+    appleIcon.href = "/icons/apple-touch-icon.png?v=50-1";
 
     let appleCapable = document.querySelector('meta[name="apple-mobile-web-app-capable"]');
 
@@ -145,7 +163,7 @@ export default function CustomerPage() {
       document.head.appendChild(favicon);
     }
 
-    favicon.href = "/favicon.ico?v=49";
+    favicon.href = "/favicon.ico?v=50-1";
 
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("/sw.js").catch(() => {});
@@ -731,7 +749,7 @@ export default function CustomerPage() {
       border: "1px solid rgba(255,255,255,.10)",
       borderRadius: "22px",
       display: "grid",
-      gridTemplateColumns: "repeat(4,1fr)",
+      gridTemplateColumns: "repeat(5,1fr)",
       padding: "10px",
       boxShadow: "0 12px 36px rgba(0,0,0,.35)",
       backdropFilter: "blur(12px)",
@@ -753,7 +771,7 @@ export default function CustomerPage() {
           color: active ? "white" : "#cbd5e1",
           borderRadius: "14px",
           padding: "9px 4px",
-          fontSize: "12px",
+          fontSize: "11px",
           fontWeight: "bold",
           cursor: "pointer",
         }}
@@ -765,6 +783,10 @@ export default function CustomerPage() {
   }
 
   function getOfferBadge(offer, compact = false) {
+    if (offer?.source === "live_telegram" || offer?.tipo_offerta === "live") {
+      return "Offerta live";
+    }
+
     if (offer?.source === "manual") {
       return "Scelto da Smart Assistance";
     }
@@ -781,6 +803,10 @@ export default function CustomerPage() {
   }
 
   function getOfferClickSource(offer, compact = false) {
+    if (offer?.source === "live_telegram" || offer?.tipo_offerta === "live") {
+      return "live_offer";
+    }
+
     if (offer?.source === "manual") {
       return "manual_offer";
     }
@@ -792,11 +818,41 @@ export default function CustomerPage() {
     return compact ? "trending" : "recommended";
   }
 
+  function parseOfferEuroAmount(value) {
+    const parsed = Number.parseFloat(
+      String(value || "")
+        .replace(/\./g, "")
+        .replace(",", ".")
+        .replace(/[^\d.]/g, "")
+    );
+
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  function getOfferDiscountPercent(offer) {
+    const direct = Number.parseInt(offer?.sconto_percentuale || offer?.discount_percent || 0, 10);
+
+    if (Number.isFinite(direct) && direct > 0 && direct < 100) {
+      return direct;
+    }
+
+    const price = parseOfferEuroAmount(offer?.prezzo || offer?.price_text);
+    const previousPrice = parseOfferEuroAmount(offer?.prezzo_precedente || offer?.previous_price_text);
+
+    if (previousPrice && price && previousPrice > price) {
+      return Math.round(((previousPrice - price) / previousPrice) * 100);
+    }
+
+    return 0;
+  }
+
   function OfferCard({ offer, compact = false }) {
+    const discountPercent = getOfferDiscountPercent(offer);
+
     return (
       <div className="sa-offer-card" style={styles.lightCard}>
         <div style={{ position: "relative" }}>
-          {offer.sconto_percentuale > 0 && (
+          {discountPercent > 0 && (
             <div
               style={{
                 position: "absolute",
@@ -811,7 +867,7 @@ export default function CustomerPage() {
                 zIndex: 1,
               }}
             >
-              -{offer.sconto_percentuale}%
+              -{discountPercent}%
             </div>
           )}
 
@@ -1080,7 +1136,7 @@ export default function CustomerPage() {
               >
                 <div style={{ ...styles.brand, marginBottom: 0 }}>
                   <img
-                    src="/brand/smart-assistance-wordmark-card.png?v=49"
+                    src="/brand/smart-assistance-wordmark-card.png?v=50-1"
                     alt="Smart Assistance"
                     style={styles.brandLogo}
                   />
@@ -1304,6 +1360,27 @@ export default function CustomerPage() {
           </>
         )}
 
+        {tab === "live" && data.liveSettings?.enabled !== false && (
+          <>
+            <h1 style={{ marginTop: 0 }}>🔥 Offerte live</h1>
+            <p style={{ color: "#cbd5e1", lineHeight: 1.5 }}>
+              Offerte automatiche aggiornate dai canali selezionati da Smart Assistance. Le offerte live restano visibili per poco tempo.
+            </p>
+
+            {!data.liveOffers?.length ? (
+              <div className="sa-app-card" style={styles.card}>
+                Nessuna offerta live disponibile al momento.
+              </div>
+            ) : (
+              <div className="sa-offers-grid">
+                {data.liveOffers.map((offer, index) => (
+                  <OfferCard key={offer.asin || offer.affiliate_url || index} offer={offer} />
+                ))}
+              </div>
+            )}
+          </>
+        )}
+
         {tab === "devices" && (
           <>
             <h1 style={{ marginTop: 0 }}>📱💻🖥️ Dispositivi</h1>
@@ -1479,6 +1556,9 @@ export default function CustomerPage() {
       <nav className="sa-nav" style={styles.nav}>
         <NavButton id="home" icon="🏠" label="Home" />
         <NavButton id="offers" icon="🎁" label="Per te" />
+        {data.liveSettings?.enabled !== false && (
+          <NavButton id="live" icon="🔥" label="Live" />
+        )}
         <NavButton id="devices" icon="📱" label="Device" />
         <NavButton id="support" icon="💬" label="Aiuto" />
       </nav>
