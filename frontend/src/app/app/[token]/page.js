@@ -585,6 +585,110 @@ export default function CustomerPage() {
     window.open(url, "_blank");
   }
 
+  function buildOfferShareText(offer) {
+    const lines = [];
+
+    lines.push("Offerta Smart Assistance");
+
+    if (offer?.titolo) {
+      lines.push(offer.titolo);
+    }
+
+    const discountPercent = getOfferDiscountPercent(offer);
+
+    if (offer?.prezzo) {
+      const priceLine = discountPercent > 0
+        ? `Prezzo: ${offer.prezzo} (-${discountPercent}%)`
+        : `Prezzo: ${offer.prezzo}`;
+
+      lines.push(priceLine);
+    }
+
+    if (offer?.prezzo_precedente) {
+      lines.push(`Prima: ${offer.prezzo_precedente}`);
+    }
+
+    return lines.filter(Boolean).join("\n");
+  }
+
+  function copyTextToClipboardFallback(text) {
+    const textarea = document.createElement("textarea");
+
+    textarea.value = text;
+    textarea.setAttribute("readonly", "");
+    textarea.style.position = "fixed";
+    textarea.style.top = "-9999px";
+    textarea.style.left = "-9999px";
+
+    document.body.appendChild(textarea);
+    textarea.focus();
+    textarea.select();
+
+    try {
+      document.execCommand("copy");
+      return true;
+    } catch (err) {
+      return false;
+    } finally {
+      document.body.removeChild(textarea);
+    }
+  }
+
+  async function shareOffer(offer) {
+    const url = offer?.affiliate_url;
+
+    if (!url) {
+      alert("Link offerta non disponibile.");
+      return;
+    }
+
+    const title = offer?.titolo || "Offerta Smart Assistance";
+    const text = buildOfferShareText(offer);
+    const fallbackText = `${text}\n${url}`;
+
+    try {
+      if (navigator.share) {
+        await navigator.share({
+          title,
+          text,
+          url,
+        });
+
+        return;
+      }
+
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(fallbackText);
+        alert("Link offerta copiato. Ora puoi incollarlo dove vuoi.");
+        return;
+      }
+
+      const copied = copyTextToClipboardFallback(fallbackText);
+
+      if (copied) {
+        alert("Link offerta copiato. Ora puoi incollarlo dove vuoi.");
+      } else {
+        alert("Copia manualmente il link: " + url);
+      }
+    } catch (err) {
+      if (err?.name === "AbortError") {
+        return;
+      }
+
+      try {
+        if (navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(fallbackText);
+          alert("Link offerta copiato. Ora puoi incollarlo dove vuoi.");
+          return;
+        }
+      } catch (copyErr) {
+        // fallback sotto
+      }
+
+      alert("Condivisione non riuscita. Link: " + url);
+    }
+  }
+
   function openWhatsApp() {
     const message = encodeURIComponent(
       `Ciao, ho bisogno di assistenza per ${deviceName || "il mio dispositivo"}.`
@@ -1124,12 +1228,39 @@ export default function CustomerPage() {
           )}
         </div>
 
-        <button
-          style={styles.cta}
-          onClick={() => openAffiliateLink(offer, getOfferClickSource(offer, compact))}
-        >
-          Scopri →
-        </button>
+        <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+          <button
+            style={{ ...styles.cta, flex: 1 }}
+            onClick={() => openAffiliateLink(offer, getOfferClickSource(offer, compact))}
+          >
+            Scopri →
+          </button>
+
+          <button
+            type="button"
+            title="Condividi offerta"
+            aria-label="Condividi offerta"
+            onClick={() => shareOffer(offer)}
+            style={{
+              border: "1px solid #cbd5e1",
+              background: "#f8fafc",
+              color: "#334155",
+              borderRadius: "14px",
+              padding: "14px 12px",
+              fontWeight: "bold",
+              cursor: "pointer",
+              whiteSpace: "nowrap",
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: "6px",
+              minWidth: compact ? "46px" : "112px",
+            }}
+          >
+            <span aria-hidden="true">📤</span>
+            {!compact && <span>Condividi</span>}
+          </button>
+        </div>
       </div>
     );
   }
