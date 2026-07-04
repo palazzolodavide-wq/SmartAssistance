@@ -17,6 +17,14 @@ export default function CustomerPage() {
     manualOffers: [],
     trendingOffers: [],
     liveOffers: [],
+    livePagination: {
+      page: 1,
+      pageSize: 20,
+      total: 0,
+      totalPages: 1,
+      hasNext: false,
+      hasPrev: false,
+    },
     liveSettings: {
       enabled: true,
       ttl_hours: 24,
@@ -32,6 +40,7 @@ export default function CustomerPage() {
   const [isInstalled, setIsInstalled] = useState(false);
   const [showIosInstallGuide, setShowIosInstallGuide] = useState(false);
   const [receiptViewer, setReceiptViewer] = useState(null);
+  const [liveLoading, setLiveLoading] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -56,6 +65,14 @@ export default function CustomerPage() {
           manualOffers: json.manualOffers || [],
           trendingOffers: json.trendingOffers || [],
           liveOffers: json.liveOffers || [],
+          livePagination: json.livePagination || {
+            page: 1,
+            pageSize: json.liveSettings?.max_visible || 20,
+            total: json.liveOffers?.length || 0,
+            totalPages: 1,
+            hasNext: false,
+            hasPrev: false,
+          },
           liveSettings: json.liveSettings || {
             enabled: true,
             ttl_hours: 24,
@@ -123,7 +140,7 @@ export default function CustomerPage() {
       document.head.appendChild(appleIcon);
     }
 
-    appleIcon.href = "/icons/apple-touch-icon.png?v=50-1";
+    appleIcon.href = "/icons/apple-touch-icon.png?v=52";
 
     let appleCapable = document.querySelector('meta[name="apple-mobile-web-app-capable"]');
 
@@ -163,7 +180,7 @@ export default function CustomerPage() {
       document.head.appendChild(favicon);
     }
 
-    favicon.href = "/favicon.ico?v=50-1";
+    favicon.href = "/favicon.ico?v=52";
 
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("/sw.js").catch(() => {});
@@ -756,6 +773,37 @@ export default function CustomerPage() {
     },
   };
 
+  async function loadLiveOffersPage(page) {
+    if (!token || liveLoading) return;
+
+    try {
+      setLiveLoading(true);
+
+      const res = await fetch(`/api/app/${token}/live-offers?page=${encodeURIComponent(page)}&v=${Date.now()}`, {
+        cache: "no-store",
+      });
+
+      const json = await res.json();
+
+      if (!res.ok || json.success === false) {
+        throw new Error(json.error || "Errore caricamento offerte live");
+      }
+
+      setData((current) => ({
+        ...current,
+        liveOffers: json.liveOffers || [],
+        livePagination: json.livePagination || current.livePagination,
+        liveSettings: json.liveSettings || current.liveSettings,
+      }));
+
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } catch (err) {
+      alert(err.message || "Errore caricamento offerte live");
+    } finally {
+      setLiveLoading(false);
+    }
+  }
+
   function NavButton({ id, icon, label }) {
     const active = tab === id;
 
@@ -1136,7 +1184,7 @@ export default function CustomerPage() {
               >
                 <div style={{ ...styles.brand, marginBottom: 0 }}>
                   <img
-                    src="/brand/smart-assistance-wordmark-card.png?v=50-1"
+                    src="/brand/smart-assistance-wordmark-card.png?v=52"
                     alt="Smart Assistance"
                     style={styles.brandLogo}
                   />
@@ -1367,16 +1415,63 @@ export default function CustomerPage() {
               Offerte automatiche aggiornate dai canali selezionati da Smart Assistance. Le offerte live restano visibili per poco tempo.
             </p>
 
+            {data.livePagination?.total > 0 && (
+              <div className="sa-app-card" style={{ ...styles.card, marginBottom: "16px" }}>
+                <strong>{data.livePagination.total} offerte live disponibili</strong>
+                <div style={{ color: "#cbd5e1", marginTop: "6px", fontSize: "14px" }}>
+                  Pagina {data.livePagination.page} di {data.livePagination.totalPages} · {data.livePagination.pageSize} offerte per pagina
+                </div>
+              </div>
+            )}
+
             {!data.liveOffers?.length ? (
               <div className="sa-app-card" style={styles.card}>
                 Nessuna offerta live disponibile al momento.
               </div>
             ) : (
-              <div className="sa-offers-grid">
-                {data.liveOffers.map((offer, index) => (
-                  <OfferCard key={offer.asin || offer.affiliate_url || index} offer={offer} />
-                ))}
-              </div>
+              <>
+                <div className="sa-offers-grid">
+                  {data.liveOffers.map((offer, index) => (
+                    <OfferCard key={`${offer.asin || offer.affiliate_url || index}-${index}`} offer={offer} />
+                  ))}
+                </div>
+
+                {data.livePagination?.totalPages > 1 && (
+                  <div className="sa-app-card" style={{ ...styles.card, marginTop: "18px" }}>
+                    <div style={{ display: "flex", gap: "10px", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
+                      <button
+                        style={{
+                          ...styles.cta,
+                          width: "auto",
+                          opacity: data.livePagination.hasPrev && !liveLoading ? 1 : 0.45,
+                          cursor: data.livePagination.hasPrev && !liveLoading ? "pointer" : "not-allowed",
+                        }}
+                        disabled={!data.livePagination.hasPrev || liveLoading}
+                        onClick={() => loadLiveOffersPage((data.livePagination.page || 1) - 1)}
+                      >
+                        ← Precedenti
+                      </button>
+
+                      <strong style={{ color: "#e2e8f0" }}>
+                        Pagina {data.livePagination.page} / {data.livePagination.totalPages}
+                      </strong>
+
+                      <button
+                        style={{
+                          ...styles.cta,
+                          width: "auto",
+                          opacity: data.livePagination.hasNext && !liveLoading ? 1 : 0.45,
+                          cursor: data.livePagination.hasNext && !liveLoading ? "pointer" : "not-allowed",
+                        }}
+                        disabled={!data.livePagination.hasNext || liveLoading}
+                        onClick={() => loadLiveOffersPage((data.livePagination.page || 1) + 1)}
+                      >
+                        Successive →
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </>
             )}
           </>
         )}

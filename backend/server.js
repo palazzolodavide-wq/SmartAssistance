@@ -1271,16 +1271,45 @@ async function saveLiveOfferFromText({
   };
 }
 
-async function getPublicLiveOffers() {
+async function getPublicLiveOffers({
+  page = 1,
+  pageSize = null
+} = {}) {
   const settings = await ensureLiveSettings();
 
   if (!settings.enabled) {
-    return [];
+    return {
+      offers: [],
+      pagination: {
+        page: 1,
+        pageSize: clampNumber(settings.max_visible, 20, 1, 100),
+        total: 0,
+        totalPages: 1,
+        hasNext: false,
+        hasPrev: false
+      }
+    };
   }
 
   await expireOldLiveOffers();
 
-  const maxVisible = clampNumber(settings.max_visible, 20, 1, 100);
+  const currentPage = clampNumber(page, 1, 1, 10000);
+  const perPage = clampNumber(pageSize || settings.max_visible, settings.max_visible || 20, 1, 100);
+  const offset = (currentPage - 1) * perPage;
+
+  const countResult = await pool.query(
+    `
+    SELECT COUNT(*)::int AS total
+    FROM live_offers
+    WHERE status = 'published'
+      AND expires_at > NOW()
+      AND affiliate_url IS NOT NULL
+      AND TRIM(affiliate_url) <> ''
+    `
+  );
+
+  const total = countResult.rows[0]?.total || 0;
+  const totalPages = Math.max(1, Math.ceil(total / perPage));
 
   const result = await pool.query(
     `
@@ -1297,6 +1326,8 @@ async function getPublicLiveOffers() {
       discount_percent AS sconto_percentuale,
       'live' AS tipo_offerta,
       'live_telegram' AS source,
+      source_channel,
+      imported_at,
       expires_at
     FROM live_offers
     WHERE status = 'published'
@@ -1304,12 +1335,22 @@ async function getPublicLiveOffers() {
       AND affiliate_url IS NOT NULL
       AND TRIM(affiliate_url) <> ''
     ORDER BY imported_at DESC
-    LIMIT $1
+    LIMIT $1 OFFSET $2
     `,
-    [maxVisible]
+    [perPage, offset]
   );
 
-  return result.rows;
+  return {
+    offers: result.rows,
+    pagination: {
+      page: currentPage,
+      pageSize: perPage,
+      total,
+      totalPages,
+      hasNext: currentPage < totalPages,
+      hasPrev: currentPage > 1
+    }
+  };
 }
 
 let telegramPollRunning = false;
@@ -1429,6 +1470,7 @@ async function pollTelegramLiveOffers() {
 function authenticateAdmin(req, res, next) {
   const publicApiRoutes = [
     /^\/api\/app\/[^/]+$/,
+    /^\/api\/app\/[^/]+\/live-offers$/,
     /^\/api\/app\/[^/]+\/click$/,
     /^\/api\/receipt-upload\/[^/]+$/,
     /^\/api\/receipt-upload\/[^/]+\/receipt$/,
@@ -1730,6 +1772,51 @@ app.post("/api/live-offers/import-external", verifyLiveImportSecret, async (req,
     });
 
     res.json(result);
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      error: err.message
+    });
+  }
+});
+
+
+
+app.post("/api/live-offers/heartbeat", verifyLiveImportSecret, async (req, res) => {
+  try {
+    const payload = req.body || {};
+    const status = String(payload.status || "ok").slice(0, 80);
+    const message = String(payload.message || "").slice(0, 500);
+    const sourcesCount = Number.parseInt(payload.sources_count || 0, 10) || 0;
+    const importedCount = Number.parseInt(payload.imported_count || 0, 10) || 0;
+    const skippedCount = Number.parseInt(payload.skipped_count || 0, 10) || 0;
+    const errorCount = Number.parseInt(payload.error_count || 0, 10) || 0;
+
+    const stateEntries = {
+      telegram_account_heartbeat_at: new Date().toISOString(),
+      telegram_account_status: status,
+      telegram_account_message: message,
+      telegram_account_sources_count: String(sourcesCount),
+      telegram_account_imported_count: String(importedCount),
+      telegram_account_skipped_count: String(skippedCount),
+      telegram_account_error_count: String(errorCount)
+    };
+
+    for (const [key, value] of Object.entries(stateEntries)) {
+      await pool.query(
+        `
+        INSERT INTO app_runtime_state (key, value, updated_at)
+        VALUES ($1, $2, NOW())
+        ON CONFLICT (key)
+        DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
+        `,
+        [key, value]
+      );
+    }
+
+    res.json({
+      success: true
+    });
   } catch (err) {
     res.status(500).json({
       success: false,
@@ -2103,6 +2190,14 @@ app.get("/api/app/:token", async (req, res) => {
     }
 
     let liveOffers = [];
+    let livePagination = {
+      page: 1,
+      pageSize: 20,
+      total: 0,
+      totalPages: 1,
+      hasNext: false,
+      hasPrev: false
+    };
     let liveSettings = {
       enabled: true,
       ttl_hours: 24,
@@ -2118,7 +2213,12 @@ app.get("/api/app/:token", async (req, res) => {
         max_visible: Number(currentLiveSettings.max_visible || 20)
       };
 
-      liveOffers = liveSettings.enabled ? await getPublicLiveOffers() : [];
+      if (liveSettings.enabled) {
+        const liveResult = await getPublicLiveOffers({ page: 1 });
+
+        liveOffers = liveResult.offers;
+        livePagination = liveResult.pagination;
+      }
     } catch (liveErr) {
       console.error("LIVE OFFERS ERROR:", liveErr.message);
       liveOffers = [];
@@ -2146,7 +2246,73 @@ app.get("/api/app/:token", async (req, res) => {
       manualOffers,
       trendingOffers,
       liveOffers,
+      livePagination,
       liveSettings
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      error: err.message
+    });
+  }
+});
+
+
+
+app.get("/api/app/:token/live-offers", async (req, res) => {
+  try {
+    const { token } = req.params;
+    const page = clampNumber(req.query.page || 1, 1, 1, 10000);
+
+    const customerResult = await pool.query(
+      "SELECT id FROM users WHERE app_token = $1",
+      [token]
+    );
+
+    if (customerResult.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: "Cliente non trovato"
+      });
+    }
+
+    const settings = await ensureLiveSettings();
+
+    if (!settings.enabled) {
+      return res.json({
+        success: true,
+        liveOffers: [],
+        livePagination: {
+          page: 1,
+          pageSize: clampNumber(settings.max_visible, 20, 1, 100),
+          total: 0,
+          totalPages: 1,
+          hasNext: false,
+          hasPrev: false
+        },
+        liveSettings: {
+          enabled: false,
+          ttl_hours: Number(settings.ttl_hours || 24),
+          max_visible: Number(settings.max_visible || 20)
+        }
+      });
+    }
+
+    const liveResult = await getPublicLiveOffers({
+      page
+    });
+
+    res.setHeader("Cache-Control", "no-store");
+
+    res.json({
+      success: true,
+      liveOffers: liveResult.offers,
+      livePagination: liveResult.pagination,
+      liveSettings: {
+        enabled: Boolean(settings.enabled),
+        ttl_hours: Number(settings.ttl_hours || 24),
+        max_visible: Number(settings.max_visible || 20)
+      }
     });
   } catch (err) {
     res.status(500).json({
@@ -3773,6 +3939,119 @@ app.put("/api/live-offers/:id/status", async (req, res) => {
     res.json({
       success: true,
       offer: result.rows[0]
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      error: err.message
+    });
+  }
+});
+
+
+
+app.get("/api/live-offers/monitor", async (req, res) => {
+  try {
+    await expireOldLiveOffers();
+
+    const settings = await ensureLiveSettings();
+
+    const countsResult = await pool.query(
+      `
+      SELECT
+        COUNT(*) FILTER (WHERE status = 'published' AND expires_at > NOW())::int AS active_live,
+        COUNT(*) FILTER (WHERE imported_at >= NOW() - INTERVAL '24 hours')::int AS imported_24h,
+        COUNT(*) FILTER (WHERE imported_at::date = CURRENT_DATE)::int AS imported_today,
+        COUNT(*) FILTER (WHERE status = 'expired')::int AS expired_total,
+        COUNT(*)::int AS total
+      FROM live_offers
+      `
+    );
+
+    const latestResult = await pool.query(
+      `
+      SELECT
+        id,
+        asin,
+        title,
+        source_channel,
+        status,
+        imported_at,
+        expires_at
+      FROM live_offers
+      ORDER BY imported_at DESC
+      LIMIT 1
+      `
+    );
+
+    const sourcesResult = await pool.query(
+      `
+      SELECT
+        COUNT(*) FILTER (WHERE enabled = true)::int AS enabled_sources,
+        COUNT(*)::int AS total_sources
+      FROM live_offer_sources
+      `
+    );
+
+    const stateResult = await pool.query(
+      `
+      SELECT key, value, updated_at
+      FROM app_runtime_state
+      WHERE key IN (
+        'telegram_account_heartbeat_at',
+        'telegram_account_status',
+        'telegram_account_message',
+        'telegram_account_sources_count',
+        'telegram_account_imported_count',
+        'telegram_account_skipped_count',
+        'telegram_account_error_count'
+      )
+      `
+    );
+
+    const state = Object.fromEntries(
+      stateResult.rows.map((row) => [row.key, row.value])
+    );
+
+    const heartbeatAt = state.telegram_account_heartbeat_at || null;
+    const heartbeatAgeSeconds = heartbeatAt
+      ? Math.round((Date.now() - new Date(heartbeatAt).getTime()) / 1000)
+      : null;
+
+    let serviceStatus = "unknown";
+
+    if (heartbeatAgeSeconds === null) {
+      serviceStatus = "unknown";
+    } else if (heartbeatAgeSeconds <= 180) {
+      serviceStatus = "ok";
+    } else if (heartbeatAgeSeconds <= 600) {
+      serviceStatus = "warning";
+    } else {
+      serviceStatus = "ko";
+    }
+
+    res.json({
+      success: true,
+      settings: {
+        enabled: Boolean(settings.enabled),
+        telegram_auto_import_enabled: Boolean(settings.telegram_auto_import_enabled),
+        ttl_hours: Number(settings.ttl_hours || 24),
+        max_visible: Number(settings.max_visible || 20)
+      },
+      counts: countsResult.rows[0] || {},
+      sources: sourcesResult.rows[0] || {},
+      latestOffer: latestResult.rows[0] || null,
+      service: {
+        status: serviceStatus,
+        heartbeat_at: heartbeatAt,
+        heartbeat_age_seconds: heartbeatAgeSeconds,
+        raw_status: state.telegram_account_status || "",
+        message: state.telegram_account_message || "",
+        sources_count: Number.parseInt(state.telegram_account_sources_count || "0", 10) || 0,
+        imported_count: Number.parseInt(state.telegram_account_imported_count || "0", 10) || 0,
+        skipped_count: Number.parseInt(state.telegram_account_skipped_count || "0", 10) || 0,
+        error_count: Number.parseInt(state.telegram_account_error_count || "0", 10) || 0
+      }
     });
   } catch (err) {
     res.status(500).json({

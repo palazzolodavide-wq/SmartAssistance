@@ -124,6 +124,7 @@ export default function Home() {
   const [liveSourceForm, setLiveSourceForm] = useState(EMPTY_LIVE_SOURCE_FORM);
   const [liveImportText, setLiveImportText] = useState("");
   const [liveMessage, setLiveMessage] = useState("");
+  const [liveMonitor, setLiveMonitor] = useState(null);
 
   const [clickStats, setClickStats] = useState({
     summary: {
@@ -214,18 +215,20 @@ export default function Home() {
     try {
       setLoading(true);
 
-      const [usersRes, devicesRes, offersRes, liveRes] = await Promise.all([
+      const [usersRes, devicesRes, offersRes, liveRes, liveMonitorRes] = await Promise.all([
         apiFetch(`${API_URL}/api/users`),
         apiFetch(`${API_URL}/api/devices`),
         apiFetch(`${API_URL}/api/offers`),
         apiFetch(`${API_URL}/api/live-offers`),
+        apiFetch(`${API_URL}/api/live-offers/monitor`),
       ]);
 
-      const [usersData, devicesData, offersData, liveData] = await Promise.all([
+      const [usersData, devicesData, offersData, liveData, liveMonitorData] = await Promise.all([
         usersRes.json(),
         devicesRes.json(),
         offersRes.json(),
         liveRes.json(),
+        liveMonitorRes.json(),
       ]);
 
       setUsers(Array.isArray(usersData) ? usersData : []);
@@ -236,6 +239,10 @@ export default function Home() {
         setLiveSettings({ ...EMPTY_LIVE_SETTINGS, ...(liveData.settings || {}) });
         setLiveSources(Array.isArray(liveData.sources) ? liveData.sources : []);
         setLiveOffers(Array.isArray(liveData.offers) ? liveData.offers : []);
+      }
+
+      if (liveMonitorData?.success) {
+        setLiveMonitor(liveMonitorData);
       }
 
       try {
@@ -1046,6 +1053,40 @@ export default function Home() {
     }
   }
 
+
+  function getLiveServiceLabel(status) {
+    if (status === "ok") return "OK";
+    if (status === "warning") return "Attenzione";
+    if (status === "ko") return "KO";
+
+    return "Non rilevato";
+  }
+
+  function getLiveServiceBadge(status) {
+    if (status === "ok") return "badge badge-green";
+    if (status === "warning") return "badge badge-yellow";
+    if (status === "ko") return "badge badge-red";
+
+    return "badge badge-blue";
+  }
+
+  function formatLiveAge(seconds) {
+    if (seconds === null || seconds === undefined) return "-";
+
+    if (seconds < 60) {
+      return `${seconds}s fa`;
+    }
+
+    const minutes = Math.round(seconds / 60);
+
+    if (minutes < 60) {
+      return `${minutes} min fa`;
+    }
+
+    const hours = Math.round(minutes / 60);
+
+    return `${hours} ore fa`;
+  }
 
   function getLiveStatusLabel(status) {
     if (status === "published") return "Pubblicata";
@@ -3811,6 +3852,48 @@ export default function Home() {
                   </div>
                 )}
 
+                {liveMonitor && (
+                  <div className="stats-grid" style={{ marginBottom: "16px" }}>
+                    <div className="stat-card">
+                      <div className="stat-label">Servizio Telegram</div>
+                      <div className="stat-value" style={{ fontSize: "22px" }}>
+                        <span className={getLiveServiceBadge(liveMonitor.service?.status)}>
+                          {getLiveServiceLabel(liveMonitor.service?.status)}
+                        </span>
+                      </div>
+                      <div className="stat-foot">
+                        Ultimo segnale: {formatLiveAge(liveMonitor.service?.heartbeat_age_seconds)}
+                      </div>
+                    </div>
+
+                    <div className="stat-card">
+                      <div className="stat-label">Offerte live attive</div>
+                      <div className="stat-value">{liveMonitor.counts?.active_live || 0}</div>
+                      <div className="stat-foot">
+                        Importate oggi: {liveMonitor.counts?.imported_today || 0}
+                      </div>
+                    </div>
+
+                    <div className="stat-card">
+                      <div className="stat-label">Canali abilitati</div>
+                      <div className="stat-value">{liveMonitor.sources?.enabled_sources || 0}</div>
+                      <div className="stat-foot">
+                        Totali configurati: {liveMonitor.sources?.total_sources || 0}
+                      </div>
+                    </div>
+
+                    <div className="stat-card">
+                      <div className="stat-label">Ultimo import</div>
+                      <div className="stat-value" style={{ fontSize: "18px" }}>
+                        {liveMonitor.latestOffer?.asin || "-"}
+                      </div>
+                      <div className="stat-foot">
+                        {liveMonitor.latestOffer?.source_channel || "Nessuna offerta importata"}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 <form className="form-grid" onSubmit={saveLiveSettings}>
                   <label className="checkbox-row">
                     <input
@@ -3850,7 +3933,7 @@ export default function Home() {
                     </select>
                   </Field>
 
-                  <Field label="Massimo offerte visibili">
+                  <Field label="Offerte per pagina nella WebApp">
                     <select
                       value={String(liveSettings.max_visible || 20)}
                       onChange={(e) => setLiveSettings({ ...liveSettings, max_visible: Number(e.target.value) })}
@@ -3868,8 +3951,8 @@ export default function Home() {
                 </form>
 
                 <div className="inline-info-box" style={{ marginTop: "14px" }}>
-                  <strong>Nota tecnica:</strong> il token del bot Telegram resta nel file backend <code>.env</code> come <code>TELEGRAM_BOT_TOKEN</code>.
-                  I canali sotto sono la whitelist da cui importare.
+                  <strong>Nota tecnica:</strong> l'import automatico usa il servizio <code>sa-telegram-live</code> con account Telegram dedicato.
+                  I canali sotto sono la whitelist letta dal servizio.
                 </div>
               </div>
 

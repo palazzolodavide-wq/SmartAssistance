@@ -192,6 +192,21 @@ async function sendImport(backendUrl, secret, payload) {
   });
 }
 
+async function sendHeartbeat(backendUrl, secret, payload) {
+  try {
+    await requestJson(`${backendUrl}/api/live-offers/heartbeat`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Live-Import-Secret": secret
+      },
+      body: JSON.stringify(payload)
+    });
+  } catch (err) {
+    console.error("HEARTBEAT ERROR:", err.message);
+  }
+}
+
 async function getRecentMessages(client, channelRef, limit) {
   const entity = await client.getEntity(channelRef);
   const messages = await client.getMessages(entity, { limit });
@@ -210,11 +225,17 @@ async function processChannel({
   lookback,
   importOldOnFirstRun
 }) {
+  const stats = {
+    imported: 0,
+    skipped: 0,
+    errors: 0
+  };
   const channelRef = normalizeChannelRef(source.channel_ref);
   const stateKey = channelRef.toLowerCase();
 
   if (!channelRef) {
-    return;
+    stats.skipped += 1;
+    return stats;
   }
 
   let messages = [];
@@ -223,11 +244,12 @@ async function processChannel({
     messages = await getRecentMessages(client, channelRef, lookback);
   } catch (err) {
     console.error(`CHANNEL READ ERROR ${channelRef}:`, err.message);
-    return;
+    stats.errors += 1;
+    return stats;
   }
 
   if (messages.length === 0) {
-    return;
+    return stats;
   }
 
   const latestId = Math.max(...messages.map(getMessageId));
@@ -235,7 +257,7 @@ async function processChannel({
   if (!state.lastIds[stateKey] && !importOldOnFirstRun) {
     state.lastIds[stateKey] = latestId;
     console.log(`CHANNEL INIT ${channelRef}: marcati come già letti fino a ${latestId}`);
-    return;
+    return stats;
   }
 
   const lastId = Number.parseInt(state.lastIds[stateKey] || 0, 10) || 0;
@@ -247,6 +269,7 @@ async function processChannel({
 
     if (!text) {
       state.lastIds[stateKey] = Math.max(state.lastIds[stateKey] || 0, messageId);
+      stats.skipped += 1;
       console.log(`LIVE SKIP ${channelRef} #${messageId}: testo/link assente`);
       continue;
     }
@@ -259,19 +282,24 @@ async function processChannel({
       });
 
       if (result.success) {
+        stats.imported += 1;
         console.log(
           `LIVE IMPORT ${channelRef} #${messageId}: ${result.asin || result.offer?.asin || "ok"}${result.duplicate ? " duplicate-update" : ""}`
         );
       } else {
+        stats.skipped += 1;
         console.log(`LIVE SKIP ${channelRef} #${messageId}: ${result.reason || result.error || "skip"}`);
       }
     } catch (err) {
+      stats.errors += 1;
       console.error(`LIVE IMPORT ERROR ${channelRef} #${messageId}:`, err.message);
       continue;
     }
 
     state.lastIds[stateKey] = Math.max(state.lastIds[stateKey] || 0, messageId);
   }
+
+  return stats;
 }
 
 async function main() {
@@ -298,6 +326,14 @@ async function main() {
 
       if (!config?.settings?.enabled || !config?.settings?.telegram_auto_import_enabled) {
         console.log("Offerte live o import Telegram disattivati da admin.");
+        await sendHeartbeat(backendUrl, secret, {
+          status: "paused",
+          message: "Offerte live o import Telegram disattivati da admin",
+          sources_count: 0,
+          imported_count: 0,
+          skipped_count: 0,
+          error_count: 0
+        });
         await sleep(pollSeconds * 1000);
         continue;
       }
@@ -306,12 +342,26 @@ async function main() {
 
       if (sources.length === 0) {
         console.log("Nessun canale Telegram abilitato in admin.");
+        await sendHeartbeat(backendUrl, secret, {
+          status: "warning",
+          message: "Nessun canale Telegram abilitato in admin",
+          sources_count: 0,
+          imported_count: 0,
+          skipped_count: 0,
+          error_count: 0
+        });
         await sleep(pollSeconds * 1000);
         continue;
       }
 
+      const totals = {
+        imported: 0,
+        skipped: 0,
+        errors: 0
+      };
+
       for (const source of sources) {
-        await processChannel({
+        const stats = await processChannel({
           client,
           source,
           state,
@@ -320,11 +370,33 @@ async function main() {
           lookback,
           importOldOnFirstRun
         });
+
+        totals.imported += stats?.imported || 0;
+        totals.skipped += stats?.skipped || 0;
+        totals.errors += stats?.errors || 0;
       }
 
       saveJson(stateFile, state);
+
+      await sendHeartbeat(backendUrl, secret, {
+        status: totals.errors > 0 ? "warning" : "ok",
+        message: totals.errors > 0 ? "Polling completato con alcuni errori" : "Polling completato",
+        sources_count: sources.length,
+        imported_count: totals.imported,
+        skipped_count: totals.skipped,
+        error_count: totals.errors
+      });
     } catch (err) {
       console.error("WORKER LOOP ERROR:", err.message);
+
+      await sendHeartbeat(backendUrl, secret, {
+        status: "error",
+        message: err.message,
+        sources_count: 0,
+        imported_count: 0,
+        skipped_count: 0,
+        error_count: 1
+      });
     }
 
     await sleep(pollSeconds * 1000);
