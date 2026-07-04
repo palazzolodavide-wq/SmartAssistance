@@ -9,6 +9,79 @@ export default function CustomerPage() {
   const params = useParams();
   const token = params?.token;
 
+  function getValidTab(value) {
+    const tabName = String(value || "").toLowerCase().trim();
+
+    return ["home", "offers", "live", "devices", "support"].includes(tabName)
+      ? tabName
+      : "home";
+  }
+
+  function getInitialNavigationState() {
+    if (typeof window === "undefined") {
+      return {
+        tab: "home",
+        livePage: 1,
+      };
+    }
+
+    const searchParams = new URLSearchParams(window.location.search);
+    const tabFromUrl = searchParams.get("tab") || searchParams.get("section") || "";
+    const pageFromUrl = Number.parseInt(
+      searchParams.get("page") || searchParams.get("livePage") || "1",
+      10
+    );
+
+    return {
+      tab: getValidTab(tabFromUrl),
+      livePage: Number.isFinite(pageFromUrl) && pageFromUrl > 0 ? pageFromUrl : 1,
+    };
+  }
+
+  function syncAppNavigation(nextTab, livePage = 1, options = {}) {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const tabName = getValidTab(nextTab);
+    const pageNumber = Number.isFinite(Number(livePage)) && Number(livePage) > 0
+      ? Number(livePage)
+      : 1;
+
+    const url = new URL(window.location.href);
+
+    if (tabName === "home") {
+      url.searchParams.delete("tab");
+      url.searchParams.delete("section");
+      url.searchParams.delete("page");
+      url.searchParams.delete("livePage");
+    } else {
+      url.searchParams.set("tab", tabName);
+      url.searchParams.delete("section");
+
+      if (tabName === "live" && pageNumber > 1) {
+        url.searchParams.set("page", String(pageNumber));
+      } else {
+        url.searchParams.delete("page");
+      }
+
+      url.searchParams.delete("livePage");
+    }
+
+    const nextUrl = `${url.pathname}${url.search}${url.hash}`;
+    const currentUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+
+    if (nextUrl === currentUrl) {
+      return;
+    }
+
+    if (options.replace) {
+      window.history.replaceState({}, "", nextUrl);
+    } else {
+      window.history.pushState({}, "", nextUrl);
+    }
+  }
+
   const [data, setData] = useState({
     customer: {},
     device: null,
@@ -32,7 +105,7 @@ export default function CustomerPage() {
     },
   });
 
-  const [tab, setTab] = useState("home");
+  const [tab, setTab] = useState(() => getInitialNavigationState().tab);
   const [offerFilter, setOfferFilter] = useState("all");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -48,6 +121,8 @@ export default function CustomerPage() {
         setLoading(true);
         setError("");
 
+        const initialNavigation = getInitialNavigationState();
+
         const res = await fetch(`/api/app/${token}?v=${Date.now()}`, {
           cache: "no-store",
         });
@@ -57,6 +132,38 @@ export default function CustomerPage() {
           throw new Error(json.error || "Errore caricamento dati");
         }
 
+        let liveOffers = json.liveOffers || [];
+        let livePagination = json.livePagination || {
+          page: 1,
+          pageSize: json.liveSettings?.max_visible || 20,
+          total: json.liveOffers?.length || 0,
+          totalPages: 1,
+          hasNext: false,
+          hasPrev: false,
+        };
+        let liveSettings = json.liveSettings || {
+          enabled: true,
+          ttl_hours: 24,
+          max_visible: 20,
+        };
+
+        if (
+          initialNavigation.tab === "live" &&
+          liveSettings?.enabled !== false &&
+          initialNavigation.livePage > 1
+        ) {
+          const liveRes = await fetch(`/api/app/${token}/live-offers?page=${encodeURIComponent(initialNavigation.livePage)}&v=${Date.now()}`, {
+            cache: "no-store",
+          });
+          const liveJson = await liveRes.json();
+
+          if (liveRes.ok && liveJson.success !== false) {
+            liveOffers = liveJson.liveOffers || [];
+            livePagination = liveJson.livePagination || livePagination;
+            liveSettings = liveJson.liveSettings || liveSettings;
+          }
+        }
+
         setData({
           customer: json.customer || {},
           device: json.device || json.devices?.[0] || null,
@@ -64,21 +171,17 @@ export default function CustomerPage() {
           recommendedOffers: json.recommendedOffers || [],
           manualOffers: json.manualOffers || [],
           trendingOffers: json.trendingOffers || [],
-          liveOffers: json.liveOffers || [],
-          livePagination: json.livePagination || {
-            page: 1,
-            pageSize: json.liveSettings?.max_visible || 20,
-            total: json.liveOffers?.length || 0,
-            totalPages: 1,
-            hasNext: false,
-            hasPrev: false,
-          },
-          liveSettings: json.liveSettings || {
-            enabled: true,
-            ttl_hours: 24,
-            max_visible: 20,
-          },
+          liveOffers,
+          livePagination,
+          liveSettings,
         });
+
+        const nextTab = liveSettings?.enabled === false && initialNavigation.tab === "live"
+          ? "home"
+          : initialNavigation.tab;
+
+        setTab(nextTab);
+        syncAppNavigation(nextTab, livePagination?.page || initialNavigation.livePage, { replace: true });
       } catch (err) {
         setError(err.message || "Errore caricamento dati");
       } finally {
@@ -94,8 +197,31 @@ export default function CustomerPage() {
   useEffect(() => {
     if (tab === "live" && data.liveSettings?.enabled === false) {
       setTab("home");
+      syncAppNavigation("home", 1, { replace: true });
     }
   }, [tab, data.liveSettings?.enabled]);
+
+  useEffect(() => {
+    function handlePopState() {
+      const navigation = getInitialNavigationState();
+
+      setTab(navigation.tab);
+
+      if (navigation.tab === "live" && data.liveSettings?.enabled !== false) {
+        loadLiveOffersPage(navigation.livePage, {
+          syncUrl: false,
+          scroll: false,
+        });
+      }
+    }
+
+    window.addEventListener("popstate", handlePopState);
+
+    return () => {
+      window.removeEventListener("popstate", handlePopState);
+    };
+  }, [token, data.liveSettings?.enabled, data.livePagination?.page]);
+
 
   useEffect(() => {
     if (!token) return;
@@ -467,14 +593,26 @@ export default function CustomerPage() {
     window.location.href = `https://wa.me/${WHATSAPP_NUMBER}?text=${message}`;
   }
 
+  function selectTab(nextTab, options = {}) {
+    const tabName = getValidTab(nextTab);
+    const livePage = tabName === "live" ? options.livePage || 1 : 1;
+
+    setTab(tabName);
+    syncAppNavigation(tabName, livePage, {
+      replace: Boolean(options.replace),
+    });
+
+    if (options.scroll !== false) {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  }
+
   function goToOffers() {
-    setTab("offers");
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    selectTab("offers");
   }
 
   function goToSupport() {
-    setTab("support");
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    selectTab("support");
   }
 
   function openReceipt(device) {
@@ -487,8 +625,7 @@ export default function CustomerPage() {
 
   function closeReceiptViewer() {
     setReceiptViewer(null);
-    setTab("home");
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    selectTab("home");
   }
 
   async function installWebApp() {
@@ -773,13 +910,17 @@ export default function CustomerPage() {
     },
   };
 
-  async function loadLiveOffersPage(page) {
+  async function loadLiveOffersPage(page, options = {}) {
     if (!token || liveLoading) return;
+
+    const pageNumber = Number.isFinite(Number(page)) && Number(page) > 0
+      ? Number(page)
+      : 1;
 
     try {
       setLiveLoading(true);
 
-      const res = await fetch(`/api/app/${token}/live-offers?page=${encodeURIComponent(page)}&v=${Date.now()}`, {
+      const res = await fetch(`/api/app/${token}/live-offers?page=${encodeURIComponent(pageNumber)}&v=${Date.now()}`, {
         cache: "no-store",
       });
 
@@ -796,7 +937,15 @@ export default function CustomerPage() {
         liveSettings: json.liveSettings || current.liveSettings,
       }));
 
-      window.scrollTo({ top: 0, behavior: "smooth" });
+      setTab("live");
+
+      if (options.syncUrl !== false) {
+        syncAppNavigation("live", json.livePagination?.page || pageNumber);
+      }
+
+      if (options.scroll !== false) {
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      }
     } catch (err) {
       alert(err.message || "Errore caricamento offerte live");
     } finally {
@@ -810,8 +959,9 @@ export default function CustomerPage() {
     return (
       <button
         onClick={() => {
-          setTab(id);
-          window.scrollTo({ top: 0, behavior: "smooth" });
+          selectTab(id, {
+            livePage: id === "live" ? 1 : undefined,
+          });
         }}
         style={{
           border: "none",
