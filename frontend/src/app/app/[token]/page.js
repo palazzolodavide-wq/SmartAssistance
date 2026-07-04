@@ -86,6 +86,7 @@ export default function CustomerPage() {
     customer: {},
     device: null,
     devices: [],
+    guides: [],
     recommendedOffers: [],
     manualOffers: [],
     trendingOffers: [],
@@ -182,6 +183,7 @@ export default function CustomerPage() {
           customer: json.customer || {},
           device: json.device || json.devices?.[0] || null,
           devices: json.devices || [],
+          guides: json.guides || [],
           recommendedOffers: json.recommendedOffers || [],
           manualOffers: json.manualOffers || [],
           trendingOffers: json.trendingOffers || [],
@@ -2069,45 +2071,23 @@ export default function CustomerPage() {
               </p>
 
               <div style={{ display: "grid", gap: "12px" }}>
-                <div style={styles.guideCard}>
-                  <div style={styles.guideIcon}>🔋</div>
-                  <div>
-                    <strong>Risparmiare batteria</strong>
-                    <p style={styles.guideText}>
-                      Chiudi le app inutili, riduci la luminosità e attiva il risparmio energetico quando serve.
-                    </p>
+                {(data.guides || []).length === 0 ? (
+                  <div style={{ color: "#94a3b8", lineHeight: 1.5 }}>
+                    Nessuna guida disponibile al momento.
                   </div>
-                </div>
-
-                <div style={styles.guideCard}>
-                  <div style={styles.guideIcon}>🛡</div>
-                  <div>
-                    <strong>Proteggere il telefono</strong>
-                    <p style={styles.guideText}>
-                      Usa vetro temperato, cover adeguata e blocco schermo con PIN, impronta o volto.
-                    </p>
-                  </div>
-                </div>
-
-                <div style={styles.guideCard}>
-                  <div style={styles.guideIcon}>☁️</div>
-                  <div>
-                    <strong>Backup foto e contatti</strong>
-                    <p style={styles.guideText}>
-                      Verifica che Google Foto, Samsung Cloud o iCloud siano configurati correttamente.
-                    </p>
-                  </div>
-                </div>
-
-                <div style={styles.guideCard}>
-                  <div style={styles.guideIcon}>📶</div>
-                  <div>
-                    <strong>Wi‑Fi e connessione</strong>
-                    <p style={styles.guideText}>
-                      Se internet è lento, riavvia il telefono e controlla rete Wi‑Fi, dati mobili e aggiornamenti.
-                    </p>
-                  </div>
-                </div>
+                ) : (
+                  data.guides.map((guide) => (
+                    <div key={guide.id || guide.title} style={styles.guideCard}>
+                      <div style={styles.guideIcon}>{guide.icon || "💡"}</div>
+                      <div>
+                        <strong>{guide.title}</strong>
+                        <p style={styles.guideText}>
+                          {guide.description}
+                        </p>
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
             </section>
 

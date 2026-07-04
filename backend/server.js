@@ -2112,6 +2112,52 @@ app.delete("/api/users/:id", async (req, res) => {
 });
 
 
+
+function normalizeGuideCategory(value) {
+  const category = String(value || "").toLowerCase().trim();
+
+  if (category === "smartphone" || category.includes("telefono") || category.includes("phone")) {
+    return "smartphone";
+  }
+
+  if (category === "notebook" || category.includes("laptop") || category.includes("portatile")) {
+    return "notebook";
+  }
+
+  if (category === "desktop" || category.includes("pc") || category.includes("computer")) {
+    return "desktop";
+  }
+
+  return "generale";
+}
+
+async function getPublicWebAppGuides(category) {
+  const normalizedCategory = normalizeGuideCategory(category);
+
+  const result = await pool.query(
+    `
+    SELECT
+      id,
+      icon,
+      title,
+      description,
+      categoria,
+      sort_order
+    FROM webapp_guides
+    WHERE enabled = TRUE
+      AND categoria IN ('generale', $1)
+    ORDER BY
+      CASE WHEN categoria = $1 THEN 0 ELSE 1 END,
+      sort_order ASC,
+      id ASC
+    LIMIT 8
+    `,
+    [normalizedCategory]
+  );
+
+  return result.rows;
+}
+
 app.get("/api/app/:token", async (req, res) => {
   try {
     const { token } = req.params;
@@ -2169,6 +2215,7 @@ app.get("/api/app/:token", async (req, res) => {
     );
 
     const device = devicesResult.rows[0] || null;
+    const guides = await getPublicWebAppGuides(device?.categoria);
 
     let manualOffers = [];
 
@@ -2338,6 +2385,7 @@ app.get("/api/app/:token", async (req, res) => {
       customer,
       device,
       devices: devicesResult.rows,
+      guides,
       recommendedOffers,
       manualOffers,
       trendingOffers,
@@ -3856,6 +3904,195 @@ app.delete("/api/offers/:id", async (req, res) => {
       error: err.message
     });
 
+  }
+});
+
+
+
+/*
+|--------------------------------------------------------------------------
+| ADMIN - WEBAPP GUIDES
+|--------------------------------------------------------------------------
+*/
+
+app.get("/api/webapp-guides", async (req, res) => {
+  try {
+    const result = await pool.query(
+      `
+      SELECT
+        id,
+        icon,
+        title,
+        description,
+        categoria,
+        sort_order,
+        enabled,
+        created_at,
+        updated_at
+      FROM webapp_guides
+      ORDER BY sort_order ASC, id ASC
+      `
+    );
+
+    res.json({
+      success: true,
+      guides: result.rows
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      error: err.message
+    });
+  }
+});
+
+app.post("/api/webapp-guides", async (req, res) => {
+  try {
+    const {
+      icon = "💡",
+      title,
+      description,
+      categoria = "generale",
+      sort_order = 0,
+      enabled = true
+    } = req.body || {};
+
+    if (!String(title || "").trim()) {
+      return res.status(400).json({
+        success: false,
+        error: "Titolo guida obbligatorio"
+      });
+    }
+
+    if (!String(description || "").trim()) {
+      return res.status(400).json({
+        success: false,
+        error: "Descrizione guida obbligatoria"
+      });
+    }
+
+    const result = await pool.query(
+      `
+      INSERT INTO webapp_guides (
+        icon,
+        title,
+        description,
+        categoria,
+        sort_order,
+        enabled
+      )
+      VALUES ($1,$2,$3,$4,$5,$6)
+      RETURNING *
+      `,
+      [
+        String(icon || "💡").trim(),
+        String(title || "").trim(),
+        String(description || "").trim(),
+        normalizeGuideCategory(categoria),
+        Number.parseInt(sort_order || 0, 10) || 0,
+        Boolean(enabled)
+      ]
+    );
+
+    res.json({
+      success: true,
+      guide: result.rows[0]
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      error: err.message
+    });
+  }
+});
+
+app.put("/api/webapp-guides/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const {
+      icon = "💡",
+      title,
+      description,
+      categoria = "generale",
+      sort_order = 0,
+      enabled = true
+    } = req.body || {};
+
+    if (!String(title || "").trim()) {
+      return res.status(400).json({
+        success: false,
+        error: "Titolo guida obbligatorio"
+      });
+    }
+
+    if (!String(description || "").trim()) {
+      return res.status(400).json({
+        success: false,
+        error: "Descrizione guida obbligatoria"
+      });
+    }
+
+    const result = await pool.query(
+      `
+      UPDATE webapp_guides
+      SET
+        icon = $1,
+        title = $2,
+        description = $3,
+        categoria = $4,
+        sort_order = $5,
+        enabled = $6,
+        updated_at = NOW()
+      WHERE id = $7
+      RETURNING *
+      `,
+      [
+        String(icon || "💡").trim(),
+        String(title || "").trim(),
+        String(description || "").trim(),
+        normalizeGuideCategory(categoria),
+        Number.parseInt(sort_order || 0, 10) || 0,
+        Boolean(enabled),
+        id
+      ]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: "Guida non trovata"
+      });
+    }
+
+    res.json({
+      success: true,
+      guide: result.rows[0]
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      error: err.message
+    });
+  }
+});
+
+app.delete("/api/webapp-guides/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    await pool.query(
+      "DELETE FROM webapp_guides WHERE id = $1",
+      [id]
+    );
+
+    res.json({
+      success: true
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      error: err.message
+    });
   }
 });
 

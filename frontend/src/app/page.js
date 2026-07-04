@@ -87,10 +87,27 @@ const EMPTY_LIVE_SOURCE_FORM = {
   label: "",
 };
 
+const GUIDE_CATEGORIES = [
+  { value: "generale", label: "Generale" },
+  { value: "smartphone", label: "Smartphone" },
+  { value: "notebook", label: "Notebook" },
+  { value: "desktop", label: "Desktop / PC fisso" },
+];
+
+const EMPTY_GUIDE_FORM = {
+  icon: "💡",
+  title: "",
+  description: "",
+  categoria: "generale",
+  sort_order: 0,
+  enabled: true,
+};
+
 const NAV_ITEMS = [
   { id: "dashboard", label: "Dashboard", icon: "📊" },
   { id: "customers", label: "Clienti & Device", icon: "👥" },
   { id: "offers", label: "Offerte", icon: "🎁" },
+  { id: "guides", label: "Guide WebApp", icon: "📚" },
   { id: "live", label: "Offerte Live", icon: "🔥" },
   { id: "stats", label: "Statistiche", icon: "📈" },
 ];
@@ -103,19 +120,23 @@ export default function Home() {
   const [users, setUsers] = useState([]);
   const [devices, setDevices] = useState([]);
   const [offers, setOffers] = useState([]);
+  const [guides, setGuides] = useState([]);
 
   const [userSearch, setUserSearch] = useState("");
   const [deviceSearch, setDeviceSearch] = useState("");
   const [offerSearch, setOfferSearch] = useState("");
+  const [guideSearch, setGuideSearch] = useState("");
 
   const [editingUserId, setEditingUserId] = useState(null);
   const [editingDeviceId, setEditingDeviceId] = useState(null);
   const [editingOfferId, setEditingOfferId] = useState(null);
+  const [editingGuideId, setEditingGuideId] = useState(null);
 
   const [userForm, setUserForm] = useState(EMPTY_USER_FORM);
   const [newCustomerDeviceForm, setNewCustomerDeviceForm] = useState(EMPTY_DEVICE_FORM);
   const [deviceForm, setDeviceForm] = useState(EMPTY_DEVICE_FORM);
   const [offerForm, setOfferForm] = useState(EMPTY_OFFER_FORM);
+  const [guideForm, setGuideForm] = useState(EMPTY_GUIDE_FORM);
 
   const [amazonSearch, setAmazonSearch] = useState("");
   const [amazonResults, setAmazonResults] = useState([]);
@@ -219,18 +240,20 @@ export default function Home() {
     try {
       setLoading(true);
 
-      const [usersRes, devicesRes, offersRes, liveRes, liveMonitorRes] = await Promise.all([
+      const [usersRes, devicesRes, offersRes, guidesRes, liveRes, liveMonitorRes] = await Promise.all([
         apiFetch(`${API_URL}/api/users`),
         apiFetch(`${API_URL}/api/devices`),
         apiFetch(`${API_URL}/api/offers`),
+        apiFetch(`${API_URL}/api/webapp-guides`),
         apiFetch(`${API_URL}/api/live-offers`),
         apiFetch(`${API_URL}/api/live-offers/monitor`),
       ]);
 
-      const [usersData, devicesData, offersData, liveData, liveMonitorData] = await Promise.all([
+      const [usersData, devicesData, offersData, guidesData, liveData, liveMonitorData] = await Promise.all([
         usersRes.json(),
         devicesRes.json(),
         offersRes.json(),
+        guidesRes.json(),
         liveRes.json(),
         liveMonitorRes.json(),
       ]);
@@ -238,6 +261,7 @@ export default function Home() {
       setUsers(Array.isArray(usersData) ? usersData : []);
       setDevices(Array.isArray(devicesData) ? devicesData : []);
       setOffers(Array.isArray(offersData) ? offersData : []);
+      setGuides(Array.isArray(guidesData?.guides) ? guidesData.guides : []);
 
       if (liveData?.success) {
         setLiveSettings({ ...EMPTY_LIVE_SETTINGS, ...(liveData.settings || {}) });
@@ -904,6 +928,129 @@ export default function Home() {
       }
 
       alert("Offerta eliminata");
+      await loadData();
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
+  function getGuideCategoryLabel(value) {
+    return GUIDE_CATEGORIES.find((item) => item.value === value)?.label || value || "-";
+  }
+
+  const filteredGuides = guides.filter((guide) => {
+    const query = guideSearch.toLowerCase().trim();
+
+    if (!query) return true;
+
+    return [
+      guide.title,
+      guide.description,
+      guide.categoria,
+      guide.icon,
+    ].some((value) => String(value || "").toLowerCase().includes(query));
+  });
+
+  function normalizeGuidePayload(payload) {
+    return {
+      icon: String(payload.icon || "💡").trim(),
+      title: String(payload.title || "").trim(),
+      description: String(payload.description || "").trim(),
+      categoria: String(payload.categoria || "generale").trim(),
+      sort_order: Number.parseInt(payload.sort_order || 0, 10) || 0,
+      enabled: Boolean(payload.enabled),
+    };
+  }
+
+  function validateGuidePayload(payload) {
+    if (!payload.title) return "Titolo guida obbligatorio";
+    if (!payload.description) return "Descrizione guida obbligatoria";
+
+    return "";
+  }
+
+  async function saveGuide(e) {
+    e.preventDefault();
+
+    try {
+      const isEdit = editingGuideId !== null;
+      const payload = normalizeGuidePayload(guideForm);
+      const validationError = validateGuidePayload(payload);
+
+      if (validationError) {
+        alert(validationError);
+        return;
+      }
+
+      const res = await apiFetch(
+        isEdit
+          ? `${API_URL}/api/webapp-guides/${editingGuideId}`
+          : `${API_URL}/api/webapp-guides`,
+        {
+          method: isEdit ? "PUT" : "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(payload),
+        }
+      );
+
+      const data = await res.json();
+
+      if (!data.success) {
+        alert(data.error || "Errore salvataggio guida");
+        return;
+      }
+
+      alert(isEdit ? "Guida aggiornata" : "Guida creata");
+
+      setEditingGuideId(null);
+      setGuideForm(EMPTY_GUIDE_FORM);
+
+      await loadData();
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
+  function editGuide(guide) {
+    setEditingGuideId(guide.id);
+    setGuideForm({
+      icon: guide.icon || "💡",
+      title: guide.title || "",
+      description: guide.description || "",
+      categoria: guide.categoria || "generale",
+      sort_order: Number(guide.sort_order || 0),
+      enabled: Boolean(guide.enabled),
+    });
+
+    setActiveSection("guides");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function resetGuideForm() {
+    setEditingGuideId(null);
+    setGuideForm(EMPTY_GUIDE_FORM);
+  }
+
+  async function deleteGuide(id) {
+    if (!confirm("Sei sicuro di voler eliminare questa guida?")) {
+      return;
+    }
+
+    try {
+      const res = await apiFetch(`${API_URL}/api/webapp-guides/${id}`, {
+        method: "DELETE",
+      });
+
+      const data = await res.json();
+
+      if (!data.success) {
+        alert(data.error || "Errore eliminazione guida");
+        return;
+      }
+
+      alert("Guida eliminata");
       await loadData();
     } catch (err) {
       alert(err.message);
@@ -3664,6 +3811,168 @@ export default function Home() {
               </div>
             </div>
           </section>
+        )}
+
+        {!loading && activeSection === "guides" && (
+          <>
+            <section className="section-grid">
+              <div className="panel">
+                <div className="panel-header">
+                  <div>
+                    <h2 className="panel-title">
+                      {editingGuideId ? "Modifica guida WebApp" : "Nuova guida WebApp"}
+                    </h2>
+                    <div className="panel-subtitle">
+                      Guide e consigli visualizzati nella sezione Aiuto della WebApp cliente.
+                    </div>
+                  </div>
+
+                  {editingGuideId && (
+                    <button type="button" className="ghost-button" onClick={resetGuideForm}>
+                      Nuova guida
+                    </button>
+                  )}
+                </div>
+
+                <form className="form-grid" onSubmit={saveGuide}>
+                  <Field label="Icona">
+                    <input
+                      value={guideForm.icon}
+                      onChange={(e) => setGuideForm({ ...guideForm, icon: e.target.value })}
+                      placeholder="💡"
+                    />
+                  </Field>
+
+                  <Field label="Categoria dispositivo">
+                    <select
+                      value={guideForm.categoria}
+                      onChange={(e) => setGuideForm({ ...guideForm, categoria: e.target.value })}
+                    >
+                      {GUIDE_CATEGORIES.map((category) => (
+                        <option key={category.value} value={category.value}>
+                          {category.label}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+
+                  <Field label="Ordine">
+                    <input
+                      type="number"
+                      value={guideForm.sort_order}
+                      onChange={(e) => setGuideForm({ ...guideForm, sort_order: e.target.value })}
+                    />
+                  </Field>
+
+                  <label className="checkbox-row">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(guideForm.enabled)}
+                      onChange={(e) => setGuideForm({ ...guideForm, enabled: e.target.checked })}
+                    />
+                    Guida attiva nella WebApp
+                  </label>
+
+                  <Field label="Titolo">
+                    <input
+                      required
+                      value={guideForm.title}
+                      onChange={(e) => setGuideForm({ ...guideForm, title: e.target.value })}
+                      placeholder="Esempio: Backup foto e contatti"
+                    />
+                  </Field>
+
+                  <Field label="Descrizione">
+                    <textarea
+                      required
+                      value={guideForm.description}
+                      onChange={(e) => setGuideForm({ ...guideForm, description: e.target.value })}
+                      placeholder="Testo breve visualizzato nella WebApp cliente"
+                    />
+                  </Field>
+
+                  <div className="form-actions">
+                    <button type="submit" className="primary-button">
+                      {editingGuideId ? "Salva guida" : "Crea guida"}
+                    </button>
+
+                    <button type="button" className="soft-button" onClick={resetGuideForm}>
+                      Pulisci
+                    </button>
+                  </div>
+                </form>
+              </div>
+
+              <div className="panel">
+                <div className="panel-header">
+                  <div>
+                    <h2 className="panel-title">Guide pubblicate</h2>
+                    <div className="panel-subtitle">
+                      {filteredGuides.length} guide visualizzate. Le guide generali appaiono a tutti.
+                    </div>
+                  </div>
+                </div>
+
+                <input
+                  className="search-input"
+                  placeholder="Cerca guida..."
+                  value={guideSearch}
+                  onChange={(e) => setGuideSearch(e.target.value)}
+                />
+
+                <div className="table-wrap" style={{ marginTop: "14px" }}>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Guida</th>
+                        <th>Categoria</th>
+                        <th>Ordine</th>
+                        <th>Stato</th>
+                        <th>Azioni</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredGuides.length === 0 ? (
+                        <tr>
+                          <td colSpan="5">Nessuna guida trovata.</td>
+                        </tr>
+                      ) : (
+                        filteredGuides.map((guide) => (
+                          <tr key={guide.id}>
+                            <td>
+                              <div className="row-title">
+                                {guide.icon || "💡"} {guide.title}
+                              </div>
+                              <div className="row-subtitle">
+                                {guide.description}
+                              </div>
+                            </td>
+                            <td>{getGuideCategoryLabel(guide.categoria)}</td>
+                            <td>{guide.sort_order}</td>
+                            <td>
+                              <span className={guide.enabled ? "badge badge-green" : "badge badge-orange"}>
+                                {guide.enabled ? "Attiva" : "Nascosta"}
+                              </span>
+                            </td>
+                            <td>
+                              <div className="action-row">
+                                <button type="button" className="small-button" onClick={() => editGuide(guide)}>
+                                  Modifica
+                                </button>
+                                <button type="button" className="danger-button" onClick={() => deleteGuide(guide.id)}>
+                                  Elimina
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </section>
+          </>
         )}
 
         {!loading && activeSection === "offers" && (
