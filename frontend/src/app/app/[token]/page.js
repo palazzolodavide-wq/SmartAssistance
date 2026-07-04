@@ -105,6 +105,17 @@ export default function CustomerPage() {
     },
   });
 
+  const canShowMarketingOffers = Boolean(data.customer?.marketing_consent);
+  const navItems = [
+    { id: "home", icon: "🏠", label: "Home" },
+    ...(canShowMarketingOffers ? [{ id: "offers", icon: "🎁", label: "Per te" }] : []),
+    ...(canShowMarketingOffers && data.liveSettings?.enabled !== false
+      ? [{ id: "live", icon: "🔥", label: "Live" }]
+      : []),
+    { id: "devices", icon: "📱", label: "Device" },
+    { id: "support", icon: "💬", label: "Aiuto" },
+  ];
+
   const [tab, setTab] = useState(() => getInitialNavigationState().tab);
   const [offerFilter, setOfferFilter] = useState("all");
   const [loading, setLoading] = useState(true);
@@ -114,6 +125,9 @@ export default function CustomerPage() {
   const [showIosInstallGuide, setShowIosInstallGuide] = useState(false);
   const [receiptViewer, setReceiptViewer] = useState(null);
   const [liveLoading, setLiveLoading] = useState(false);
+  const [showConsentSettings, setShowConsentSettings] = useState(false);
+  const [consentSaving, setConsentSaving] = useState(false);
+  const [consentMessage, setConsentMessage] = useState("");
 
   useEffect(() => {
     async function load() {
@@ -176,9 +190,12 @@ export default function CustomerPage() {
           liveSettings,
         });
 
-        const nextTab = liveSettings?.enabled === false && initialNavigation.tab === "live"
-          ? "home"
-          : initialNavigation.tab;
+        const requestedTab = initialNavigation.tab;
+        const nextTab =
+          (!Boolean(json.customer?.marketing_consent) && ["offers", "live"].includes(requestedTab)) ||
+          (liveSettings?.enabled === false && requestedTab === "live")
+            ? "home"
+            : requestedTab;
 
         setTab(nextTab);
         syncAppNavigation(nextTab, livePagination?.page || initialNavigation.livePage, { replace: true });
@@ -195,11 +212,17 @@ export default function CustomerPage() {
   }, [token]);
 
   useEffect(() => {
+    if (["offers", "live"].includes(tab) && !canShowMarketingOffers) {
+      setTab("home");
+      syncAppNavigation("home", 1, { replace: true });
+      return;
+    }
+
     if (tab === "live" && data.liveSettings?.enabled === false) {
       setTab("home");
       syncAppNavigation("home", 1, { replace: true });
     }
-  }, [tab, data.liveSettings?.enabled]);
+  }, [tab, canShowMarketingOffers, data.liveSettings?.enabled]);
 
   useEffect(() => {
     function handlePopState() {
@@ -207,7 +230,7 @@ export default function CustomerPage() {
 
       setTab(navigation.tab);
 
-      if (navigation.tab === "live" && data.liveSettings?.enabled !== false) {
+      if (navigation.tab === "live" && canShowMarketingOffers && data.liveSettings?.enabled !== false) {
         loadLiveOffersPage(navigation.livePage, {
           syncUrl: false,
           scroll: false,
@@ -220,7 +243,7 @@ export default function CustomerPage() {
     return () => {
       window.removeEventListener("popstate", handlePopState);
     };
-  }, [token, data.liveSettings?.enabled, data.livePagination?.page]);
+  }, [token, canShowMarketingOffers, data.liveSettings?.enabled, data.livePagination?.page]);
 
 
   useEffect(() => {
@@ -447,6 +470,10 @@ export default function CustomerPage() {
 
 
   const allOffers = useMemo(() => {
+    if (!canShowMarketingOffers) {
+      return [];
+    }
+
     const merged = [
       ...(data.manualOffers || []),
       ...(data.recommendedOffers || []),
@@ -460,7 +487,7 @@ export default function CustomerPage() {
           .map((offer, index) => [offer.asin || offer.affiliate_url || index, offer])
       ).values(),
     ];
-  }, [data.manualOffers, data.recommendedOffers, data.trendingOffers]);
+  }, [canShowMarketingOffers, data.manualOffers, data.recommendedOffers, data.trendingOffers]);
 
   const offerFilterOptions = useMemo(() => {
     const categories = [
@@ -695,6 +722,65 @@ export default function CustomerPage() {
     );
 
     window.location.href = `https://wa.me/${WHATSAPP_NUMBER}?text=${message}`;
+  }
+
+  function buildPrivacyRequestMessage() {
+    return encodeURIComponent(
+      "Ciao, vorrei informazioni sulla gestione o revoca del consenso privacy collegato alla mia WebApp Smart Assistance."
+    );
+  }
+
+  function openPrivacyRequestWhatsApp() {
+    window.location.href = `https://wa.me/${WHATSAPP_NUMBER}?text=${buildPrivacyRequestMessage()}`;
+  }
+
+  async function updateCustomerConsentPreferences(nextValues) {
+    if (!token || consentSaving) return;
+
+    try {
+      setConsentSaving(true);
+      setConsentMessage("");
+
+      const res = await fetch(`/api/app/${token}/consents`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          marketing_consent: Boolean(nextValues.marketing_consent),
+          whatsapp_consent: Boolean(nextValues.whatsapp_consent),
+        }),
+      });
+
+      const json = await res.json();
+
+      if (!res.ok || json.success === false) {
+        throw new Error(json.error || "Errore aggiornamento consensi");
+      }
+
+      setData((current) => ({
+        ...current,
+        customer: {
+          ...current.customer,
+          ...(json.customer || {}),
+        },
+        manualOffers: json.customer?.marketing_consent ? current.manualOffers : [],
+        recommendedOffers: json.customer?.marketing_consent ? current.recommendedOffers : [],
+        trendingOffers: json.customer?.marketing_consent ? current.trendingOffers : [],
+        liveOffers: json.customer?.marketing_consent ? current.liveOffers : [],
+      }));
+
+      if (!json.customer?.marketing_consent && ["offers", "live"].includes(tab)) {
+        setTab("home");
+        syncAppNavigation("home", 1, { replace: true });
+      }
+
+      setConsentMessage("Preferenze aggiornate.");
+    } catch (err) {
+      setConsentMessage(err.message || "Errore aggiornamento consensi.");
+    } finally {
+      setConsentSaving(false);
+    }
   }
 
   function selectTab(nextTab, options = {}) {
@@ -996,12 +1082,94 @@ export default function CustomerPage() {
       fontSize: "13px",
       lineHeight: 1.45,
     },
+    preferenceToggle: {
+      display: "flex",
+      gap: "12px",
+      alignItems: "flex-start",
+      border: "1px solid rgba(148,163,184,.30)",
+      background: "rgba(255,255,255,.04)",
+      borderRadius: "16px",
+      padding: "14px",
+      color: "#e2e8f0",
+      cursor: "pointer",
+    },
+    preferenceCheck: {
+      marginTop: "4px",
+      flexShrink: 0,
+    },
+    preferenceCopy: {
+      display: "grid",
+      gap: "4px",
+      minWidth: 0,
+      flex: 1,
+    },
+    preferenceTitle: {
+      display: "block",
+      fontWeight: "bold",
+      lineHeight: 1.25,
+    },
+    preferenceHint: {
+      display: "block",
+      color: "#cbd5e1",
+      fontSize: "13px",
+      lineHeight: 1.45,
+    },
+    supportSideStack: {
+      display: "grid",
+      gap: "16px",
+      alignContent: "start",
+      minWidth: 0,
+    },
+    preferencePanelHeader: {
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: "14px",
+      marginBottom: "14px",
+    },
+    preferencePanelTitle: {
+      margin: "0 0 6px",
+      fontSize: "28px",
+      lineHeight: 1.15,
+    },
+    preferencePanelSubtitle: {
+      margin: 0,
+      color: "#cbd5e1",
+      lineHeight: 1.45,
+      fontSize: "15px",
+    },
+    preferencePanelButton: {
+      border: "1px solid rgba(147,197,253,.40)",
+      borderRadius: "14px",
+      padding: "12px 16px",
+      background: "rgba(37,99,235,.16)",
+      color: "#bfdbfe",
+      fontWeight: "bold",
+      cursor: "pointer",
+      whiteSpace: "nowrap",
+      minWidth: "110px",
+    },
+    privacyCompactCard: {
+      display: "flex",
+      gap: "12px",
+      alignItems: "flex-start",
+      border: "1px solid rgba(148,163,184,.25)",
+      background: "rgba(255,255,255,.045)",
+      borderRadius: "16px",
+      padding: "14px",
+      color: "#e2e8f0",
+    },
+    compactContactCard: {
+      padding: "22px",
+    },
     nav: {
       position: "fixed",
-      left: "12px",
-      right: "12px",
+      left: "50%",
+      right: "auto",
       bottom: "12px",
+      width: "calc(100% - 24px)",
       maxWidth: "560px",
+      transform: "translateX(-50%)",
       margin: "0 auto",
       background: "rgba(15,23,42,.96)",
       border: "1px solid rgba(255,255,255,.10)",
@@ -1072,10 +1240,18 @@ export default function CustomerPage() {
           background: active ? "#2563eb" : "transparent",
           color: active ? "white" : "#cbd5e1",
           borderRadius: "14px",
-          padding: "9px 4px",
+          padding: "9px 8px",
           fontSize: "11px",
           fontWeight: "bold",
           cursor: "pointer",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: "2px",
+          minHeight: "58px",
+          minWidth: 0,
+          textAlign: "center",
         }}
       >
         <div style={{ fontSize: "18px", marginBottom: "2px" }}>{icon}</div>
@@ -1322,6 +1498,14 @@ export default function CustomerPage() {
           margin-bottom: 16px;
         }
 
+        .sa-support-grid {
+          align-items: start;
+        }
+
+        .sa-support-grid > * {
+          min-width: 0;
+        }
+
         @media (min-width: 900px) {
           .sa-page {
             padding: 28px 32px 108px !important;
@@ -1367,11 +1551,27 @@ export default function CustomerPage() {
           }
 
           .sa-support-grid {
-            grid-template-columns: repeat(2, minmax(0, 1fr));
+            grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+            align-items: start;
           }
 
           .sa-support-main {
             grid-column: 1 / -1;
+          }
+
+          .sa-support-guides {
+            grid-column: 1;
+          }
+
+          .sa-support-side-stack {
+            grid-column: 2;
+            align-self: start;
+          }
+
+          .sa-support-side,
+          .sa-support-secondary {
+            grid-column: auto;
+            align-self: auto;
           }
 
           .sa-nav {
@@ -1497,6 +1697,16 @@ export default function CustomerPage() {
                 </div>
               )}
             </section>
+
+            {!canShowMarketingOffers && (
+              <section className="sa-offer-section sa-app-card" style={styles.card}>
+                <h2 style={{ margin: "0 0 8px" }}>🎁 Offerte non attive</h2>
+                <p style={{ color: "#cbd5e1", lineHeight: 1.5, margin: 0 }}>
+                  Le offerte personalizzate e le offerte live sono disponibili solo se è attivo il consenso marketing.
+                  Puoi richiederne l'attivazione al punto vendita.
+                </p>
+              </section>
+            )}
 
             <section className="sa-home-device sa-app-card" style={styles.card}>
               <div style={{ fontSize: "14px", color: "#93c5fd", marginBottom: "8px", fontWeight: "bold" }}>
@@ -1644,7 +1854,7 @@ export default function CustomerPage() {
           </div>
         )}
 
-        {tab === "offers" && (
+        {tab === "offers" && canShowMarketingOffers && (
           <>
             <h1 style={{ marginTop: 0 }}>🎁 Per te</h1>
             <p style={{ color: "#cbd5e1", lineHeight: 1.5 }}>
@@ -1689,7 +1899,7 @@ export default function CustomerPage() {
           </>
         )}
 
-        {tab === "live" && data.liveSettings?.enabled !== false && (
+        {tab === "live" && canShowMarketingOffers && data.liveSettings?.enabled !== false && (
           <>
             <h1 style={{ marginTop: 0 }}>🔥 Offerte live</h1>
             <p style={{ color: "#cbd5e1", lineHeight: 1.5 }}>
@@ -1852,7 +2062,7 @@ export default function CustomerPage() {
               </button>
             </section>
 
-            <section className="sa-app-card" style={styles.card}>
+            <section className="sa-support-guides sa-app-card" style={styles.card}>
               <h2 style={{ marginTop: 0 }}>📚 Guide rapide</h2>
               <p style={{ color: "#cbd5e1", lineHeight: 1.5 }}>
                 Piccoli consigli utili per usare meglio il tuo smartphone ogni giorno.
@@ -1901,42 +2111,148 @@ export default function CustomerPage() {
               </div>
             </section>
 
-            <section className="sa-app-card" style={styles.card}>
-              <h2 style={{ marginTop: 0 }}>📞 Contatti utili</h2>
-              <p style={{ color: "#cbd5e1", lineHeight: 1.5, marginBottom: "14px" }}>
-                Salva questa WebApp nella schermata Home per ritrovare assistenza, garanzia e consigli in un solo tocco.
-              </p>
+            <div className="sa-support-side-stack" style={styles.supportSideStack}>
+<section className="sa-support-side sa-app-card" style={styles.card}>
+                <div style={styles.preferencePanelHeader}>
+                  <div>
+                    <h2 style={styles.preferencePanelTitle}>🔐 Privacy e preferenze</h2>
+                    <p style={styles.preferencePanelSubtitle}>
+                      Gestisci offerte personalizzate e messaggi WhatsApp.
+                    </p>
+                  </div>
 
-              <button
-                onClick={openWhatsApp}
-                style={{
-                  width: "100%",
-                  border: "1px solid rgba(37,211,102,.45)",
-                  borderRadius: "16px",
-                  padding: "15px",
-                  background: "rgba(37,211,102,.12)",
-                  color: "#bbf7d0",
-                  fontWeight: "bold",
-                  fontSize: "16px",
-                  cursor: "pointer",
-                }}
-              >
-                Chiedi informazioni
-              </button>
-            </section>
+                  <button
+                    type="button"
+                    onClick={() => setShowConsentSettings(!showConsentSettings)}
+                    style={styles.preferencePanelButton}
+                  >
+                    {showConsentSettings ? "Chiudi" : "Gestisci"}
+                  </button>
+                </div>
+
+                {showConsentSettings && (
+                  <div style={{ display: "grid", gap: "12px" }}>
+                    <div style={styles.privacyCompactCard}>
+                      <div style={{ ...styles.guideIcon, width: "38px", height: "38px", minWidth: "38px", fontSize: "20px" }}>🔐</div>
+                      <div>
+                        <strong style={{ display: "block", marginBottom: "4px" }}>Privacy</strong>
+                        <p style={styles.preferenceHint}>
+                          Stato: {data.customer?.privacy_consent ? "attiva" : "non registrata"}.
+                          Per una revoca completa contatta il punto vendita.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={openPrivacyRequestWhatsApp}
+                          style={{
+                            marginTop: "10px",
+                            border: "1px solid rgba(147,197,253,.35)",
+                            borderRadius: "12px",
+                            padding: "9px 12px",
+                            background: "rgba(37,99,235,.16)",
+                            color: "#bfdbfe",
+                            fontWeight: "bold",
+                            cursor: "pointer",
+                          }}
+                        >
+                          Richiedi gestione privacy
+                        </button>
+                      </div>
+                    </div>
+
+                    <label style={styles.preferenceToggle}>
+                      <input
+                        type="checkbox"
+                        style={styles.preferenceCheck}
+                        checked={Boolean(data.customer?.marketing_consent)}
+                        disabled={consentSaving}
+                        onChange={(e) => updateCustomerConsentPreferences({
+                          marketing_consent: e.target.checked,
+                          whatsapp_consent: Boolean(data.customer?.whatsapp_consent),
+                        })}
+                      />
+                      <span style={styles.preferenceCopy}>
+                        <strong style={styles.preferenceTitle}>Offerte e consigli personalizzati</strong>
+                        <small style={styles.preferenceHint}>
+                          Mostra o nasconde le sezioni Per te e Live.
+                        </small>
+                      </span>
+                    </label>
+
+                    <label style={styles.preferenceToggle}>
+                      <input
+                        type="checkbox"
+                        style={styles.preferenceCheck}
+                        checked={Boolean(data.customer?.whatsapp_consent)}
+                        disabled={consentSaving}
+                        onChange={(e) => updateCustomerConsentPreferences({
+                          marketing_consent: Boolean(data.customer?.marketing_consent),
+                          whatsapp_consent: e.target.checked,
+                        })}
+                      />
+                      <span style={styles.preferenceCopy}>
+                        <strong style={styles.preferenceTitle}>Messaggi WhatsApp</strong>
+                        <small style={styles.preferenceHint}>
+                          Consente messaggi e broadcast manuali dal punto vendita.
+                        </small>
+                      </span>
+                    </label>
+
+                    {consentMessage && (
+                      <div style={{
+                        border: "1px solid rgba(147,197,253,.30)",
+                        background: "rgba(37,99,235,.12)",
+                        color: "#bfdbfe",
+                        borderRadius: "14px",
+                        padding: "11px 12px",
+                        fontSize: "14px",
+                      }}>
+                        {consentMessage}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </section>
+
+              <section className="sa-support-secondary sa-app-card" style={{ ...styles.card, ...styles.compactContactCard }}>
+                <h2 style={{ margin: "0 0 10px", fontSize: "25px" }}>📞 Contatti utili</h2>
+                <p style={{ color: "#cbd5e1", lineHeight: 1.45, margin: "0 0 14px" }}>
+                  Salva questa WebApp nella schermata Home per ritrovare assistenza, garanzia e consigli.
+                </p>
+
+                <button
+                  onClick={openWhatsApp}
+                  style={{
+                    width: "100%",
+                    border: "1px solid rgba(37,211,102,.45)",
+                    borderRadius: "16px",
+                    padding: "14px",
+                    background: "rgba(37,211,102,.12)",
+                    color: "#bbf7d0",
+                    fontWeight: "bold",
+                    fontSize: "16px",
+                    cursor: "pointer",
+                  }}
+                >
+                  Chiedi informazioni
+                </button>
+              </section>
+            </div>
             </div>
           </>
         )}
       </div>
 
-      <nav className="sa-nav" style={styles.nav}>
-        <NavButton id="home" icon="🏠" label="Home" />
-        <NavButton id="offers" icon="🎁" label="Per te" />
-        {data.liveSettings?.enabled !== false && (
-          <NavButton id="live" icon="🔥" label="Live" />
-        )}
-        <NavButton id="devices" icon="📱" label="Device" />
-        <NavButton id="support" icon="💬" label="Aiuto" />
+      <nav
+        className="sa-nav"
+        style={{
+          ...styles.nav,
+          gridTemplateColumns: `repeat(${navItems.length}, minmax(0, 1fr))`,
+          maxWidth: `${Math.min(860, Math.max(360, navItems.length * 170))}px`,
+        }}
+      >
+        {navItems.map((item) => (
+          <NavButton key={item.id} id={item.id} icon={item.icon} label={item.label} />
+        ))}
       </nav>
     </main>
   );

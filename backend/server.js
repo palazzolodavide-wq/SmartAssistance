@@ -1471,6 +1471,7 @@ function authenticateAdmin(req, res, next) {
   const publicApiRoutes = [
     /^\/api\/app\/[^/]+$/,
     /^\/api\/app\/[^/]+\/live-offers$/,
+    /^\/api\/app\/[^/]+\/consents$/,
     /^\/api\/app\/[^/]+\/click$/,
     /^\/api\/receipt-upload\/[^/]+$/,
     /^\/api\/receipt-upload\/[^/]+\/receipt$/,
@@ -1846,7 +1847,14 @@ app.get("/api/users", async (req, res) => {
         telefono,
         role,
         app_token,
-        COALESCE(broadcast_opt_out, false) AS broadcast_opt_out
+        COALESCE(broadcast_opt_out, false) AS broadcast_opt_out,
+        COALESCE(privacy_consent, false) AS privacy_consent,
+        privacy_consent_at,
+        COALESCE(marketing_consent, false) AS marketing_consent,
+        marketing_consent_at,
+        COALESCE(whatsapp_consent, false) AS whatsapp_consent,
+        whatsapp_consent_at,
+        COALESCE(consent_note, '') AS consent_note
       FROM users
       ORDER BY created_at DESC
     `);
@@ -1864,8 +1872,25 @@ app.post("/api/users", async (req, res) => {
       cognome,
       email,
       telefono,
-      broadcast_opt_out = false
+      privacy_consent = false,
+      marketing_consent = false,
+      whatsapp_consent = false,
+      consent_note = "",
+      broadcast_opt_out
     } = req.body;
+
+    if (!privacy_consent) {
+      return res.status(400).json({
+        success: false,
+        error: "Per creare il cliente devi registrare il consenso privacy."
+      });
+    }
+
+    const effectiveWhatsAppConsent = Boolean(whatsapp_consent);
+    const effectiveBroadcastOptOut =
+      broadcast_opt_out !== undefined
+        ? Boolean(broadcast_opt_out)
+        : !effectiveWhatsAppConsent;
 
     const countResult = await pool.query(
       "SELECT COUNT(*)::int AS total FROM users WHERE role = 'customer'"
@@ -1891,7 +1916,14 @@ app.post("/api/users", async (req, res) => {
         password_hash,
         consenso_privacy,
         app_token,
-        broadcast_opt_out
+        broadcast_opt_out,
+        privacy_consent,
+        privacy_consent_at,
+        marketing_consent,
+        marketing_consent_at,
+        whatsapp_consent,
+        whatsapp_consent_at,
+        consent_note
       )
       VALUES (
         $1,
@@ -1901,9 +1933,16 @@ app.post("/api/users", async (req, res) => {
         $4,
         $5,
         'changeme',
-        true,
         $6,
-        $7
+        $7,
+        $8,
+        $9,
+        CASE WHEN $9 THEN NOW() ELSE NULL END,
+        $10,
+        CASE WHEN $10 THEN NOW() ELSE NULL END,
+        $11,
+        CASE WHEN $11 THEN NOW() ELSE NULL END,
+        $12
       )
       RETURNING *
       `,
@@ -1913,8 +1952,13 @@ app.post("/api/users", async (req, res) => {
         cognome,
         email,
         telefono,
+        Boolean(privacy_consent),
         appToken,
-        Boolean(broadcast_opt_out)
+        effectiveBroadcastOptOut,
+        Boolean(privacy_consent),
+        Boolean(marketing_consent),
+        effectiveWhatsAppConsent,
+        String(consent_note || "").trim()
       ]
     );
 
@@ -1949,8 +1993,25 @@ app.put("/api/users/:id", async (req, res) => {
       cognome,
       email,
       telefono,
-      broadcast_opt_out = false
+      privacy_consent = false,
+      marketing_consent = false,
+      whatsapp_consent = false,
+      consent_note = "",
+      broadcast_opt_out
     } = req.body;
+
+    if (!privacy_consent) {
+      return res.status(400).json({
+        success: false,
+        error: "Il consenso privacy è obbligatorio per mantenere il cliente attivo."
+      });
+    }
+
+    const effectiveWhatsAppConsent = Boolean(whatsapp_consent);
+    const effectiveBroadcastOptOut =
+      broadcast_opt_out !== undefined
+        ? Boolean(broadcast_opt_out)
+        : !effectiveWhatsAppConsent;
 
     const result = await pool.query(
       `
@@ -1960,8 +2021,28 @@ app.put("/api/users/:id", async (req, res) => {
         cognome = $2,
         email = $3,
         telefono = $4,
-        broadcast_opt_out = $5
-      WHERE id = $6
+        broadcast_opt_out = $5,
+        consenso_privacy = $6,
+        privacy_consent = $6,
+        privacy_consent_at = CASE
+          WHEN $6 = TRUE AND privacy_consent_at IS NULL THEN NOW()
+          WHEN $6 = FALSE THEN NULL
+          ELSE privacy_consent_at
+        END,
+        marketing_consent = $7,
+        marketing_consent_at = CASE
+          WHEN $7 = TRUE AND marketing_consent_at IS NULL THEN NOW()
+          WHEN $7 = FALSE THEN NULL
+          ELSE marketing_consent_at
+        END,
+        whatsapp_consent = $8,
+        whatsapp_consent_at = CASE
+          WHEN $8 = TRUE AND whatsapp_consent_at IS NULL THEN NOW()
+          WHEN $8 = FALSE THEN NULL
+          ELSE whatsapp_consent_at
+        END,
+        consent_note = $9
+      WHERE id = $10
       RETURNING *
       `,
       [
@@ -1969,7 +2050,11 @@ app.put("/api/users/:id", async (req, res) => {
         cognome,
         email,
         telefono,
-        Boolean(broadcast_opt_out),
+        effectiveBroadcastOptOut,
+        Boolean(privacy_consent),
+        Boolean(marketing_consent),
+        effectiveWhatsAppConsent,
+        String(consent_note || "").trim(),
         id
       ]
     );
@@ -2039,7 +2124,13 @@ app.get("/api/app/:token", async (req, res) => {
         nome,
         cognome,
         email,
-        telefono
+        telefono,
+        COALESCE(privacy_consent, COALESCE(consenso_privacy, false), false) AS privacy_consent,
+        privacy_consent_at,
+        COALESCE(marketing_consent, false) AS marketing_consent,
+        marketing_consent_at,
+        COALESCE(whatsapp_consent, false) AS whatsapp_consent,
+        whatsapp_consent_at
       FROM users
       WHERE app_token = $1
       `,
@@ -2054,6 +2145,7 @@ app.get("/api/app/:token", async (req, res) => {
     }
 
     const customer = customerResult.rows[0];
+    const canShowMarketingOffers = Boolean(customer.marketing_consent);
 
     const devicesResult = await pool.query(
       `
@@ -2080,8 +2172,9 @@ app.get("/api/app/:token", async (req, res) => {
 
     let manualOffers = [];
 
-    try {
-      const manualOffersResult = await pool.query(`
+    if (canShowMarketingOffers) {
+      try {
+        const manualOffersResult = await pool.query(`
         SELECT
           id::text AS asin,
           categoria,
@@ -2105,14 +2198,15 @@ app.get("/api/app/:token", async (req, res) => {
       `);
 
       manualOffers = manualOffersResult.rows;
-    } catch (manualErr) {
-      console.error("MANUAL OFFERS ERROR:", manualErr.message);
-      manualOffers = [];
+      } catch (manualErr) {
+        console.error("MANUAL OFFERS ERROR:", manualErr.message);
+        manualOffers = [];
+      }
     }
 
     let amazonRecommendedOffers = [];
 
-    if (device?.marca && device?.modello) {
+    if (canShowMarketingOffers && device?.marca && device?.modello) {
       try {
         const searches = getDeviceAccessorySearches(device);
 
@@ -2182,11 +2276,13 @@ app.get("/api/app/:token", async (req, res) => {
 
     let trendingOffers = [];
 
-    try {
-      trendingOffers = await getTrendingOffers(10);
-    } catch (trendingErr) {
-      console.error("TRENDING OFFERS ERROR:", trendingErr.message);
-      trendingOffers = [];
+    if (canShowMarketingOffers) {
+      try {
+        trendingOffers = await getTrendingOffers(10);
+      } catch (trendingErr) {
+        console.error("TRENDING OFFERS ERROR:", trendingErr.message);
+        trendingOffers = [];
+      }
     }
 
     let liveOffers = [];
@@ -2213,7 +2309,7 @@ app.get("/api/app/:token", async (req, res) => {
         max_visible: Number(currentLiveSettings.max_visible || 20)
       };
 
-      if (liveSettings.enabled) {
+      if (canShowMarketingOffers && liveSettings.enabled) {
         const liveResult = await getPublicLiveOffers({ page: 1 });
 
         liveOffers = liveResult.offers;
@@ -2265,7 +2361,7 @@ app.get("/api/app/:token/live-offers", async (req, res) => {
     const page = clampNumber(req.query.page || 1, 1, 1, 10000);
 
     const customerResult = await pool.query(
-      "SELECT id FROM users WHERE app_token = $1",
+      "SELECT id, COALESCE(marketing_consent, false) AS marketing_consent FROM users WHERE app_token = $1",
       [token]
     );
 
@@ -2276,7 +2372,29 @@ app.get("/api/app/:token/live-offers", async (req, res) => {
       });
     }
 
+    const customer = customerResult.rows[0];
     const settings = await ensureLiveSettings();
+
+    if (!customer.marketing_consent) {
+      return res.json({
+        success: true,
+        liveOffers: [],
+        livePagination: {
+          page: 1,
+          pageSize: clampNumber(settings.max_visible, 20, 1, 100),
+          total: 0,
+          totalPages: 1,
+          hasNext: false,
+          hasPrev: false
+        },
+        liveSettings: {
+          enabled: false,
+          ttl_hours: Number(settings.ttl_hours || 24),
+          max_visible: Number(settings.max_visible || 20)
+        },
+        reason: "Consenso marketing non attivo"
+      });
+    }
 
     if (!settings.enabled) {
       return res.json({
@@ -2313,6 +2431,96 @@ app.get("/api/app/:token/live-offers", async (req, res) => {
         ttl_hours: Number(settings.ttl_hours || 24),
         max_visible: Number(settings.max_visible || 20)
       }
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      error: err.message
+    });
+  }
+});
+
+
+app.put("/api/app/:token/consents", async (req, res) => {
+  try {
+    const { token } = req.params;
+    const {
+      marketing_consent = false,
+      whatsapp_consent = false
+    } = req.body || {};
+
+    const customerResult = await pool.query(
+      `
+      SELECT
+        id,
+        COALESCE(privacy_consent, COALESCE(consenso_privacy, false), false) AS privacy_consent
+      FROM users
+      WHERE app_token = $1
+      `,
+      [token]
+    );
+
+    if (customerResult.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: "Cliente non trovato"
+      });
+    }
+
+    const customer = customerResult.rows[0];
+
+    if (!customer.privacy_consent) {
+      return res.status(400).json({
+        success: false,
+        error: "Consenso privacy non registrato. Contatta il punto vendita."
+      });
+    }
+
+    const nextMarketingConsent = Boolean(marketing_consent);
+    const nextWhatsAppConsent = Boolean(whatsapp_consent);
+
+    const result = await pool.query(
+      `
+      UPDATE users
+      SET
+        marketing_consent = $1,
+        marketing_consent_at = CASE
+          WHEN $1 = TRUE AND marketing_consent_at IS NULL THEN NOW()
+          WHEN $1 = FALSE THEN NULL
+          ELSE marketing_consent_at
+        END,
+        whatsapp_consent = $2,
+        whatsapp_consent_at = CASE
+          WHEN $2 = TRUE AND whatsapp_consent_at IS NULL THEN NOW()
+          WHEN $2 = FALSE THEN NULL
+          ELSE whatsapp_consent_at
+        END,
+        broadcast_opt_out = NOT $2
+      WHERE id = $3
+      RETURNING
+        id,
+        customer_code,
+        nome,
+        cognome,
+        email,
+        telefono,
+        COALESCE(privacy_consent, COALESCE(consenso_privacy, false), false) AS privacy_consent,
+        privacy_consent_at,
+        COALESCE(marketing_consent, false) AS marketing_consent,
+        marketing_consent_at,
+        COALESCE(whatsapp_consent, false) AS whatsapp_consent,
+        whatsapp_consent_at
+      `,
+      [
+        nextMarketingConsent,
+        nextWhatsAppConsent,
+        customer.id
+      ]
+    );
+
+    res.json({
+      success: true,
+      customer: result.rows[0]
     });
   } catch (err) {
     res.status(500).json({

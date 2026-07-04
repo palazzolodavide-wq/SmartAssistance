@@ -48,7 +48,11 @@ const EMPTY_USER_FORM = {
   cognome: "",
   email: "",
   telefono: "",
-  broadcast_opt_out: false,
+  privacy_consent: false,
+  marketing_consent: false,
+  whatsapp_consent: false,
+  consent_note: "",
+  broadcast_opt_out: true,
 };
 
 const EMPTY_DEVICE_FORM = {
@@ -460,6 +464,11 @@ export default function Home() {
     try {
       const isEdit = editingUserId !== null;
 
+      if (!userForm.privacy_consent) {
+        alert("Per salvare il cliente devi registrare il consenso privacy.");
+        return;
+      }
+
       if (!isEdit) {
         if (
           !newCustomerDeviceForm.marca ||
@@ -568,6 +577,10 @@ export default function Home() {
       cognome: user.cognome || "",
       email: user.email || "",
       telefono: user.telefono || "",
+      privacy_consent: Boolean(user.privacy_consent),
+      marketing_consent: Boolean(user.marketing_consent),
+      whatsapp_consent: Boolean(user.whatsapp_consent),
+      consent_note: user.consent_note || "",
       broadcast_opt_out: Boolean(user.broadcast_opt_out),
     });
 
@@ -1331,6 +1344,10 @@ export default function Home() {
           cognome: user.cognome || "",
           email: user.email || "",
           telefono: user.telefono || "",
+          privacy_consent: Boolean(user.privacy_consent),
+          marketing_consent: Boolean(user.marketing_consent),
+          whatsapp_consent: !nextValue,
+          consent_note: user.consent_note || "",
           broadcast_opt_out: nextValue,
         }),
       });
@@ -1349,9 +1366,90 @@ export default function Home() {
     }
   }
 
+  async function updateCustomerConsents(user, changes, successMessage) {
+    if (!user?.id) return;
+
+    const nextPrivacyConsent =
+      changes.privacy_consent !== undefined
+        ? Boolean(changes.privacy_consent)
+        : Boolean(user.privacy_consent);
+
+    if (!nextPrivacyConsent) {
+      alert("Il consenso privacy è obbligatorio per mantenere il cliente attivo. Per una revoca privacy completa serve una procedura separata di eliminazione/anomizzazione cliente.");
+      return;
+    }
+
+    const nextMarketingConsent =
+      changes.marketing_consent !== undefined
+        ? Boolean(changes.marketing_consent)
+        : Boolean(user.marketing_consent);
+
+    const nextWhatsAppConsent =
+      changes.whatsapp_consent !== undefined
+        ? Boolean(changes.whatsapp_consent)
+        : Boolean(user.whatsapp_consent);
+
+    const nextBroadcastOptOut =
+      changes.broadcast_opt_out !== undefined
+        ? Boolean(changes.broadcast_opt_out)
+        : !nextWhatsAppConsent;
+
+    try {
+      const res = await apiFetch(`${API_URL}/api/users/${user.id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          nome: user.nome || "",
+          cognome: user.cognome || "",
+          email: user.email || "",
+          telefono: user.telefono || "",
+          privacy_consent: nextPrivacyConsent,
+          marketing_consent: nextMarketingConsent,
+          whatsapp_consent: nextWhatsAppConsent,
+          consent_note: user.consent_note || "",
+          broadcast_opt_out: nextBroadcastOptOut,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!data.success) {
+        alert(data.error || "Errore aggiornamento consensi");
+        return;
+      }
+
+      await loadData();
+
+      if (successMessage) {
+        alert(successMessage);
+      }
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
+  async function revokeOptionalConsents(user) {
+    if (!confirm(`Vuoi revocare marketing/offerte e WhatsApp per ${user.nome || ""} ${user.cognome || ""}?`)) {
+      return;
+    }
+
+    await updateCustomerConsents(
+      user,
+      {
+        marketing_consent: false,
+        whatsapp_consent: false,
+        broadcast_opt_out: true,
+      },
+      "Consensi opzionali revocati"
+    );
+  }
+
   function getBroadcastCustomers() {
     return users.filter((user) =>
       getWhatsAppPhone(user) &&
+      Boolean(user.whatsapp_consent) &&
       !user.broadcast_opt_out
     );
   }
@@ -1587,6 +1685,10 @@ export default function Home() {
   }
 
   function openCustomerWhatsApp(user) {
+    if (!user.whatsapp_consent || user.broadcast_opt_out) {
+      alert("WhatsApp non consentito per questo cliente. Attiva prima il consenso WhatsApp.");
+      return;
+    }
     const phone = getWhatsAppPhone(user);
     const message = encodeURIComponent(getCustomerOnboardingMessage(user));
 
@@ -1599,6 +1701,10 @@ export default function Home() {
   }
 
   function openCustomWhatsAppModal(user) {
+    if (!user.whatsapp_consent || user.broadcast_opt_out) {
+      alert("WhatsApp non consentito per questo cliente. Attiva prima il consenso WhatsApp.");
+      return;
+    }
     const phone = getWhatsAppPhone(user);
 
     if (!phone) {
@@ -2904,14 +3010,52 @@ export default function Home() {
                     />
                   </Field>
 
+                  <div className="form-section-title">
+                    <div className="row-title">Privacy e consensi</div>
+                    <div className="row-subtitle">
+                      Registra solo consensi confermati dal cliente. Il testo legale completo deve restare nella tua informativa.
+                      Puoi revocare marketing e WhatsApp dai dettagli cliente o da questo modulo.
+                    </div>
+                  </div>
+
                   <label className="checkbox-row">
                     <input
                       type="checkbox"
-                      checked={Boolean(userForm.broadcast_opt_out)}
-                      onChange={(e) => setUserForm({ ...userForm, broadcast_opt_out: e.target.checked })}
+                      checked={Boolean(userForm.privacy_consent)}
+                      onChange={(e) => setUserForm({ ...userForm, privacy_consent: e.target.checked })}
                     />
-                    Non includere questo cliente nei broadcast WhatsApp
+                    Privacy obbligatoria: il cliente ha preso visione dell'informativa privacy
                   </label>
+
+                  <label className="checkbox-row">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(userForm.marketing_consent)}
+                      onChange={(e) => setUserForm({ ...userForm, marketing_consent: e.target.checked })}
+                    />
+                    Marketing/offerte affiliate: mostra offerte nella WebApp cliente
+                  </label>
+
+                  <label className="checkbox-row">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(userForm.whatsapp_consent)}
+                      onChange={(e) => setUserForm({
+                        ...userForm,
+                        whatsapp_consent: e.target.checked,
+                        broadcast_opt_out: !e.target.checked,
+                      })}
+                    />
+                    WhatsApp: consenti messaggi e broadcast manuali
+                  </label>
+
+                  <Field label="Nota consenso">
+                    <textarea
+                      placeholder="Esempio: consenso raccolto in negozio durante configurazione WebApp"
+                      value={userForm.consent_note || ""}
+                      onChange={(e) => setUserForm({ ...userForm, consent_note: e.target.value })}
+                    />
+                  </Field>
 
                   {!editingUserId && (
                     <>
@@ -3176,11 +3320,15 @@ export default function Home() {
                                 <div className="row-title">{user.nome} {user.cognome}</div>
                                 <div className="row-subtitle">
                                   {user.customer_code || "-"}
-                                  {user.broadcast_opt_out && (
-                                    <span className="badge badge-orange" style={{ marginLeft: "8px" }}>
-                                      No broadcast
-                                    </span>
-                                  )}
+                                  <span className={user.privacy_consent ? "badge badge-green" : "badge badge-red"} style={{ marginLeft: "8px" }}>
+                                    Privacy {user.privacy_consent ? "OK" : "NO"}
+                                  </span>
+                                  <span className={user.marketing_consent ? "badge badge-blue" : "badge badge-orange"} style={{ marginLeft: "8px" }}>
+                                    Marketing {user.marketing_consent ? "OK" : "NO"}
+                                  </span>
+                                  <span className={user.whatsapp_consent ? "badge badge-green" : "badge badge-orange"} style={{ marginLeft: "8px" }}>
+                                    WhatsApp {user.whatsapp_consent ? "OK" : "NO"}
+                                  </span>
                                 </div>
                               </td>
                               <td>{user.telefono || "-"}</td>
@@ -3227,21 +3375,56 @@ export default function Home() {
 
                                       <div className="inline-info-box" style={{ marginTop: "12px" }}>
                                         <div>
-                                          <div className="row-title">Broadcast WhatsApp</div>
+                                          <div className="row-title">Consensi comunicazione</div>
                                           <div className="row-subtitle">
-                                            {user.broadcast_opt_out
-                                              ? "Questo cliente è escluso dai messaggi broadcast automatici."
-                                              : "Questo cliente riceve i messaggi broadcast automatici."}
+                                            Privacy: {user.privacy_consent ? "attiva" : "mancante"} ·
+                                            Marketing: {user.marketing_consent ? "attivo" : "non attivo"} ·
+                                            WhatsApp: {user.whatsapp_consent ? "attivo" : "non attivo"}
                                           </div>
+                                          {user.consent_note && (
+                                            <div className="row-subtitle" style={{ marginTop: "4px" }}>
+                                              Nota: {user.consent_note}
+                                            </div>
+                                          )}
                                         </div>
 
-                                        <button
-                                          type="button"
-                                          className={user.broadcast_opt_out ? "primary-button" : "danger-button"}
-                                          onClick={() => toggleBroadcastOptOut(user)}
-                                        >
-                                          {user.broadcast_opt_out ? "Includi nei broadcast" : "Non includere nei broadcast"}
-                                        </button>
+                                        <div className="action-row" style={{ justifyContent: "flex-end" }}>
+                                          <button
+                                            type="button"
+                                            className={user.marketing_consent ? "danger-button" : "primary-button"}
+                                            onClick={() => updateCustomerConsents(
+                                              user,
+                                              { marketing_consent: !user.marketing_consent },
+                                              user.marketing_consent ? "Consenso marketing disattivato" : "Consenso marketing attivato"
+                                            )}
+                                          >
+                                            {user.marketing_consent ? "Disattiva marketing" : "Attiva marketing"}
+                                          </button>
+
+                                          <button
+                                            type="button"
+                                            className={user.whatsapp_consent ? "danger-button" : "primary-button"}
+                                            onClick={() => toggleBroadcastOptOut(user)}
+                                          >
+                                            {user.whatsapp_consent ? "Disattiva WhatsApp" : "Attiva WhatsApp"}
+                                          </button>
+
+                                          <button
+                                            type="button"
+                                            className="danger-button"
+                                            onClick={() => revokeOptionalConsents(user)}
+                                          >
+                                            Revoca opzionali
+                                          </button>
+
+                                          <button
+                                            type="button"
+                                            className="soft-button"
+                                            onClick={() => editUser(user)}
+                                          >
+                                            Modifica consensi
+                                          </button>
+                                        </div>
                                       </div>
                                     </div>
 
