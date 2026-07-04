@@ -1,0 +1,12 @@
+services:
+  sa-telegram-live:
+    build:
+      context: ./telegram-live
+    container_name: sa-telegram-live
+    restart: unless-stopped
+    env_file:
+      - ./telegram-live/.env
+    volumes:
+      - ./telegram-live/session:/app/session
+    depends_on:
+      - sa-backend

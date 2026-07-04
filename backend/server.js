@@ -1630,6 +1630,115 @@ async function sendWahaTextMessage({ chatId, text }) {
 }
 
 
+
+/*
+|--------------------------------------------------------------------------
+| INTERNAL - TELEGRAM LIVE ACCOUNT READER
+|--------------------------------------------------------------------------
+*/
+
+function verifyLiveImportSecret(req, res, next) {
+  const configuredSecret = String(process.env.LIVE_IMPORT_SECRET || "").trim();
+  const requestSecret = String(
+    req.headers["x-live-import-secret"] ||
+    req.headers["x-smartassistance-live-secret"] ||
+    ""
+  ).trim();
+
+  if (!configuredSecret) {
+    return res.status(503).json({
+      success: false,
+      error: "LIVE_IMPORT_SECRET non configurato nel backend"
+    });
+  }
+
+  if (!requestSecret || requestSecret !== configuredSecret) {
+    return res.status(401).json({
+      success: false,
+      error: "Secret import live non valido"
+    });
+  }
+
+  next();
+}
+
+app.get("/api/live-offers/import-config", verifyLiveImportSecret, async (req, res) => {
+  try {
+    const settings = await ensureLiveSettings();
+
+    const sourcesResult = await pool.query(
+      `
+      SELECT
+        id,
+        channel_ref,
+        label,
+        enabled
+      FROM live_offer_sources
+      WHERE enabled = true
+      ORDER BY created_at ASC
+      `
+    );
+
+    res.json({
+      success: true,
+      settings: {
+        enabled: Boolean(settings.enabled),
+        telegram_auto_import_enabled: Boolean(settings.telegram_auto_import_enabled),
+        ttl_hours: Number(settings.ttl_hours || 24),
+        max_visible: Number(settings.max_visible || 20)
+      },
+      sources: sourcesResult.rows
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      error: err.message
+    });
+  }
+});
+
+app.post("/api/live-offers/import-external", verifyLiveImportSecret, async (req, res) => {
+  try {
+    const text = String(req.body?.text || "").trim();
+    const sourceChannel = normalizeChannelRef(req.body?.source_channel || "telegram-account");
+    const telegramMessageId = req.body?.telegram_message_id
+      ? Number.parseInt(req.body.telegram_message_id, 10)
+      : null;
+
+    if (!text) {
+      return res.status(400).json({
+        success: false,
+        error: "Testo offerta mancante"
+      });
+    }
+
+    const settings = await ensureLiveSettings();
+
+    if (!settings.enabled || !settings.telegram_auto_import_enabled) {
+      return res.status(409).json({
+        success: false,
+        skipped: true,
+        reason: "Offerte live o import automatico Telegram disattivati"
+      });
+    }
+
+    const result = await saveLiveOfferFromText({
+      text,
+      sourceChannel,
+      telegramMessageId: Number.isFinite(telegramMessageId) ? telegramMessageId : null,
+      settings
+    });
+
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      error: err.message
+    });
+  }
+});
+
+
 app.use("/api", authenticateAdmin);
 
 /*

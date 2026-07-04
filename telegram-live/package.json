@@ -1,0 +1,13 @@
+{
+  "name": "smartassistance-telegram-live",
+  "version": "1.0.0",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "start": "node src/worker.js",
+    "login": "node src/login.js"
+  },
+  "dependencies": {
+    "telegram": "^2.26.22"
+  }
+}
