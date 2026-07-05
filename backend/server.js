@@ -1,4 +1,4 @@
-const express = require("express");
+﻿const express = require("express");
 const cors = require("cors");
 const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
@@ -2202,6 +2202,118 @@ app.get("/api/users", async (req, res) => {
     res.json(result.rows);
   } catch (err) {
     
+  }
+});
+
+
+// PATCH_61_PRIVACY_EXPORT_ENDPOINT
+app.get("/api/users/:id/privacy-export", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const userResult = await pool.query(
+      `
+      SELECT
+        id,
+        customer_code,
+        role,
+        nome,
+        cognome,
+        email,
+        telefono,
+        app_token,
+        created_at,
+        updated_at,
+        COALESCE(consenso_privacy, false) AS consenso_privacy,
+        COALESCE(consenso_marketing, false) AS consenso_marketing,
+        COALESCE(broadcast_opt_out, false) AS broadcast_opt_out,
+        COALESCE(privacy_consent, false) AS privacy_consent,
+        privacy_consent_at,
+        COALESCE(marketing_consent, false) AS marketing_consent,
+        marketing_consent_at,
+        COALESCE(whatsapp_consent, false) AS whatsapp_consent,
+        whatsapp_consent_at,
+        COALESCE(consent_note, '') AS consent_note
+      FROM users
+      WHERE id = $1
+      `,
+      [id]
+    );
+
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: "Cliente non trovato"
+      });
+    }
+
+    const devicesResult = await pool.query(
+      `
+      SELECT
+        id,
+        marca,
+        modello,
+        categoria,
+        data_acquisto,
+        scadenza_garanzia,
+        note,
+        receipt_filename,
+        receipt_mime_type,
+        receipt_uploaded_at,
+        created_at
+      FROM devices
+      WHERE user_id = $1
+      ORDER BY created_at DESC
+      `,
+      [id]
+    );
+
+    const user = userResult.rows[0];
+
+    res.json({
+      success: true,
+      export: {
+        export_type: "privacy_consents_customer",
+        generated_at: new Date().toISOString(),
+        customer: {
+          id: user.id,
+          customer_code: user.customer_code,
+          role: user.role,
+          nome: user.nome,
+          cognome: user.cognome,
+          email: user.email,
+          telefono: user.telefono,
+          app_token: user.app_token,
+          created_at: user.created_at,
+          updated_at: user.updated_at
+        },
+        consents: {
+          privacy_consent: user.privacy_consent,
+          privacy_consent_at: user.privacy_consent_at,
+          legacy_consenso_privacy: user.consenso_privacy,
+          marketing_consent: user.marketing_consent,
+          marketing_consent_at: user.marketing_consent_at,
+          legacy_consenso_marketing: user.consenso_marketing,
+          whatsapp_consent: user.whatsapp_consent,
+          whatsapp_consent_at: user.whatsapp_consent_at,
+          broadcast_opt_out: user.broadcast_opt_out,
+          consent_note: user.consent_note
+        },
+        devices: devicesResult.rows,
+        summary: {
+          devices_count: devicesResult.rows.length,
+          marketing_allowed: Boolean(user.marketing_consent),
+          whatsapp_allowed: Boolean(user.whatsapp_consent) && !Boolean(user.broadcast_opt_out),
+          broadcast_excluded: Boolean(user.broadcast_opt_out)
+        }
+      }
+    });
+  } catch (err) {
+    console.error("PRIVACY EXPORT ERROR:", err);
+    res.status(500).json({
+      success: false,
+      error: err.message
+    });
   }
 });
 
@@ -4944,6 +5056,7 @@ app.listen(process.env.PORT || 3006, () => {
   setInterval(pollTelegramLiveOffers, pollSeconds * 1000);
   setTimeout(pollTelegramLiveOffers, 5000);
 });
+
 
 
 

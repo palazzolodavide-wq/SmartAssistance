@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import React, { useEffect, useMemo, useState } from "react";
 
@@ -1769,6 +1769,45 @@ export default function Home() {
     }
   }
 
+
+  // PATCH_61_PRIVACY_EXPORT_FRONTEND
+  async function exportCustomerPrivacy(user) {
+    if (!user?.id) {
+      alert("Cliente non disponibile");
+      return;
+    }
+
+    try {
+      const res = await apiFetch(`${API_URL}/api/users/${user.id}/privacy-export`);
+      const data = await res.json();
+
+      if (!data.success) {
+        alert(data.error || "Errore esportazione privacy");
+        return;
+      }
+
+      const exportPayload = data.export || data;
+      const safeCode = String(user.customer_code || user.id || "cliente")
+        .replace(/[^a-zA-Z0-9_-]+/g, "_")
+        .slice(0, 80);
+      const datePart = new Date().toISOString().slice(0, 10);
+      const fileName = `smart-assistance-privacy-${safeCode}-${datePart}.json`;
+      const blob = new Blob([JSON.stringify(exportPayload, null, 2)], {
+        type: "application/json;charset=utf-8"
+      });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      alert("Esportazione privacy generata");
+    } catch (err) {
+      alert(err.message);
+    }
+  }
   function openCustomerApp(user) {
     const url = getCustomerAppUrl(user);
 
@@ -3621,6 +3660,14 @@ export default function Home() {
                                           <button
                                             type="button"
                                             className="soft-button"
+                                            onClick={() => exportCustomerPrivacy(user)}
+                                          >
+                                            Esporta privacy
+                                          </button>
+
+                                          <button
+                                            type="button"
+                                            className="soft-button"
                                             onClick={() => editUser(user)}
                                           >
                                             Modifica consensi
@@ -5311,4 +5358,5 @@ function Field({ label, children }) {
     </div>
   );
 }
+
 
