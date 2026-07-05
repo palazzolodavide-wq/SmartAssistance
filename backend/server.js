@@ -1,4 +1,4 @@
-﻿const express = require("express");
+const express = require("express");
 const cors = require("cors");
 const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
@@ -1470,18 +1470,6 @@ async function pollTelegramLiveOffers() {
 */
 
 function authenticateAdmin(req, res, next) {
-  // PATCH_59_3_2_LIVE_OFFERS_PUBLIC_BYPASS
-  // Express puo' esporre la route come /api/app/TOKEN/live-offers in originalUrl
-  // oppure come /app/TOKEN/live-offers in req.path quando il middleware e' montato su /api.
-  // Questo bypass pubblico evita il falso errore JWT "Token mancante" sulla paginazione Live.
-  const originalPathOnlyLivePublic = String(req.originalUrl || req.url || "").split("?")[0];
-  const mountedPathOnlyLivePublic = String(req.path || "").split("?")[0];
-  if (
-    /^\/api\/app\/[^/]+\/live-offers$/.test(originalPathOnlyLivePublic) ||
-    /^\/app\/[^/]+\/live-offers$/.test(mountedPathOnlyLivePublic)
-  ) {
-    return next();
-  }
   const publicApiRoutes = [
     /^\/api\/app\/[^/]+$/,
     /^\/api\/app\/[^/]+\/live-offers$/,
@@ -1490,25 +1478,25 @@ function authenticateAdmin(req, res, next) {
     /^\/api\/receipt-upload\/[^/]+$/,
     /^\/api\/receipt-upload\/[^/]+\/receipt$/,
     /^\/app\/[^/]+$/,
+    /^\/app\/[^/]+\/live-offers$/,
     /^\/app\/[^/]+\/click$/,
     /^\/receipt-upload\/[^/]+$/,
     /^\/receipt-upload\/[^/]+\/receipt$/
   ];
-  // PATCH_59_3_1_PUBLIC_ROUTE_PATH_FIX
-  // Usa sempre il path senza query string per riconoscere le route pubbliche WebApp.
-  // Necessario per URL tipo /api/app/TOKEN/live-offers?page=2.
-  const requestPathForAuth = String(req.path || req.originalUrl || req.url || "").split("?")[0];
-  if (publicApiRoutes.some((route) => route.test(requestPathForAuth))) {
-    return next();
-  }
-  // PATCH 59.3: public route matching must ignore query string
-  const publicRoutePath = req.path || String(req.originalUrl || req.url || "").split("?")[0];
-  if (publicApiRoutes.some((route) => route.test(publicRoutePath))) {
-    return next();
-  }
 
-  const isPublicApiRoute = publicApiRoutes.some((route) =>
-    route.test(req.originalUrl) || route.test(req.path)
+  // PATCH_60_KEEP_59_3_LIVE_PAGINATION_AUTH_FIX
+  // When this middleware is mounted on /api, req.path can be /app/TOKEN/live-offers.
+  // Always match public routes against paths without query string.
+  const authCandidatePaths = [
+    req.path,
+    req.originalUrl,
+    req.url
+  ]
+    .filter(Boolean)
+    .map((value) => String(value).split("?")[0]);
+
+  const isPublicApiRoute = authCandidatePaths.some((pathValue) =>
+    publicApiRoutes.some((route) => route.test(pathValue))
   );
 
   if (isPublicApiRoute) {
@@ -1870,6 +1858,63 @@ function saReadTextFileSafe(filePath) {
   }
 }
 
+function saReadJsonFileSafe(filePath) {
+  try {
+    return JSON.parse(saReadTextFileSafe(filePath) || "{}");
+  } catch (err) {
+    return {};
+  }
+}
+
+function saListBackupHistory(backupRoot) {
+  try {
+    const entries = fs.readdirSync(backupRoot, { withFileTypes: true });
+    const zipFiles = saListBackupFiles(backupRoot);
+    const zipByName = Object.fromEntries(zipFiles.map((file) => [file.name, file]));
+
+    return entries
+      .filter((entry) => entry.isDirectory() && /^run-\d{8}-\d{6}$/i.test(entry.name))
+      .map((entry) => {
+        const runPath = path.join(backupRoot, entry.name);
+        const reportJson = saReadJsonFileSafe(path.join(runPath, "backup-check-report.json"));
+        const notification = saParseKeyValueText(saReadTextFileSafe(path.join(runPath, "notification-status.txt")));
+        const fallbackStat = fs.statSync(runPath);
+        const backupText = String(reportJson.backup || "");
+        const zipNameMatch = backupText.match(/SmartAssistanceBackup-[0-9-]+\.zip/i);
+        const zipName = zipNameMatch ? zipNameMatch[0] : "";
+        const zipFile = zipName ? zipByName[zipName] : null;
+        const status = String(reportJson.status || notification.Report || "NON DISPONIBILE");
+
+        return {
+          key: entry.name,
+          run_dir_name: entry.name,
+          date: reportJson.date || notification.Data || fallbackStat.mtime.toISOString(),
+          status,
+          normalized_status: saNormalizeStatus(status),
+          exit_code: reportJson.exitCode ?? null,
+          backup: reportJson.backup || "",
+          zip_name: zipName,
+          zip_size_bytes: zipFile ? zipFile.size_bytes : 0,
+          zip_size_mb: zipFile ? zipFile.size_mb : 0,
+          backend: reportJson.backend || "",
+          frontend: reportJson.frontend || "",
+          public: reportJson.public || "",
+          postgres_dump: reportJson.postgresDump || "",
+          live_offers_24h: reportJson.liveOffers24h || "",
+          live_offers_last: reportJson.liveOffersLast || "",
+          whatsapp: notification.WhatsApp || "",
+          email: notification.Email || "",
+          duration_seconds: reportJson.durationSeconds ?? null,
+          warnings_count: Array.isArray(reportJson.warnings) ? reportJson.warnings.length : 0,
+          errors_count: Array.isArray(reportJson.errors) ? reportJson.errors.length : 0
+        };
+      })
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  } catch (err) {
+    return [];
+  }
+}
+
 function saExtractReportValue(text, label) {
   const prefix = `${label}:`;
   const line = String(text || "").split(/\r?\n/).find((item) => item.trim().startsWith(prefix));
@@ -1952,6 +1997,7 @@ app.get("/api/system-status", async (req, res) => {
       backup: { status: "unknown", label: "Backup", message: "Non verificato" }
     },
     backup: { accessible: false, count: 0, latest: null, files: [] },
+    history: { count: 0, items: [] },
     report: {
       available: false,
       status_line: "",
@@ -2100,6 +2146,8 @@ app.get("/api/system-status", async (req, res) => {
   result.backup.count = result.backup.files.length;
   result.backup.latest = result.backup.files[0] || null;
   result.backup.accessible = result.backup.files.length > 0 || Boolean(reportText || notificationText);
+  result.history.items = saListBackupHistory(backupRoot).slice(0, 30);
+  result.history.count = result.history.items.length;
 
   if (!result.backup.latest) {
     result.services.backup = { status: "error", label: "Backup", message: "Nessun backup ZIP trovato" };
@@ -4896,9 +4944,6 @@ app.listen(process.env.PORT || 3006, () => {
   setInterval(pollTelegramLiveOffers, pollSeconds * 1000);
   setTimeout(pollTelegramLiveOffers, 5000);
 });
-
-
-
 
 
 

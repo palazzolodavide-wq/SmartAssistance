@@ -4684,6 +4684,7 @@ export default function Home() {
             <section className="kpi-grid">
               <KpiCard label="Stato generale" value={getSystemStatusLabel(systemStatus?.overall_status)} />
               <KpiCard label="Backup recenti" value={systemStatus?.backup?.count || 0} />
+              <KpiCard label="Check storici" value={systemStatus?.history?.count || 0} />
               <KpiCard label="Offerte Live 24h" value={systemStatus?.live?.imported_24h || 0} />
               <KpiCard label="WhatsApp" value={getSystemStatusLabel(systemStatus?.services?.whatsapp?.status)} />
             </section>
@@ -4747,6 +4748,36 @@ export default function Home() {
                     ) : (
                       (systemStatus?.backup?.files || []).map((file) => (
                         <tr key={file.name}><td>{file.name}</td><td>{formatFileSize(file.size_bytes)}</td><td>{formatSystemDate(file.last_modified)}</td></tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <section className="panel" style={{ marginTop: "18px" }}>
+              <div className="panel-header">
+                <div>
+                  <h2 className="panel-title">Storico backup e check</h2>
+                  <div className="panel-subtitle">Ultime esecuzioni dello script giornaliero Patch 58.</div>
+                </div>
+              </div>
+              <div className="table-wrap">
+                <table>
+                  <thead><tr><th>Data</th><th>Esito</th><th>Backup</th><th>WhatsApp</th><th>Durata</th><th>Avvisi/Errori</th></tr></thead>
+                  <tbody>
+                    {(systemStatus?.history?.items || []).length === 0 ? (
+                      <tr><td colSpan="6">Nessuno storico trovato.</td></tr>
+                    ) : (
+                      (systemStatus?.history?.items || []).map((item) => (
+                        <tr key={item.key || item.run_dir_name || item.zip_name}>
+                          <td>{formatSystemDate(item.date)}</td>
+                          <td><span className={getSystemBadgeClass(item.normalized_status)}>{item.status || "-"}</span></td>
+                          <td>{item.zip_name || item.backup || "-"}</td>
+                          <td>{item.whatsapp || "-"}</td>
+                          <td>{item.duration_seconds !== null && item.duration_seconds !== undefined ? `${item.duration_seconds}s` : "-"}</td>
+                          <td>{item.warnings_count || 0}/{item.errors_count || 0}</td>
+                        </tr>
                       ))
                     )}
                   </tbody>
