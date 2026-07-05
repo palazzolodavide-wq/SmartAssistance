@@ -95,7 +95,7 @@ const GUIDE_CATEGORIES = [
 ];
 
 const EMPTY_GUIDE_FORM = {
-  icon: "💡",
+  icon: "ðŸ’¡",
   title: "",
   description: "",
   categoria: "generale",
@@ -104,12 +104,13 @@ const EMPTY_GUIDE_FORM = {
 };
 
 const NAV_ITEMS = [
-  { id: "dashboard", label: "Dashboard", icon: "📊" },
-  { id: "customers", label: "Clienti & Device", icon: "👥" },
-  { id: "offers", label: "Offerte", icon: "🎁" },
-  { id: "guides", label: "Guide WebApp", icon: "📚" },
-  { id: "live", label: "Offerte Live", icon: "🔥" },
-  { id: "stats", label: "Statistiche", icon: "📈" },
+  { id: "dashboard", label: "Dashboard", icon: "ðŸ“Š" },
+  { id: "customers", label: "Clienti & Device", icon: "ðŸ‘¥" },
+  { id: "offers", label: "Offerte", icon: "ðŸŽ" },
+  { id: "guides", label: "Guide WebApp", icon: "ðŸ“š" },
+  { id: "live", label: "Offerte Live", icon: "ðŸ”¥" },
+  { id: "system", label: "Sistema", icon: "🛡️" },
+  { id: "stats", label: "Statistiche", icon: "ðŸ“ˆ" },
 ];
 
 export default function Home() {
@@ -150,6 +151,7 @@ export default function Home() {
   const [liveImportText, setLiveImportText] = useState("");
   const [liveMessage, setLiveMessage] = useState("");
   const [liveMonitor, setLiveMonitor] = useState(null);
+  const [systemStatus, setSystemStatus] = useState(null);
 
   const [clickStats, setClickStats] = useState({
     summary: {
@@ -294,6 +296,18 @@ export default function Home() {
       } catch (broadcastErr) {
         console.error("Errore storico broadcast WhatsApp", broadcastErr);
       }
+
+      try {
+        const systemRes = await apiFetch(`${API_URL}/api/system-status`);
+        const systemData = await systemRes.json();
+
+        if (systemData.success) {
+          setSystemStatus(systemData);
+        }
+      } catch (systemErr) {
+        console.error("Errore stato sistema", systemErr);
+        setSystemStatus(null);
+      }
     } catch (err) {
       alert(err.message);
     } finally {
@@ -383,11 +397,11 @@ export default function Home() {
   function getDeviceIcon(category) {
     const normalized = normalizeDeviceCategory(category);
 
-    if (normalized === "notebook") return "💻";
-    if (normalized === "desktop") return "🖥️";
-    if (normalized === "smartphone") return "📱";
+    if (normalized === "notebook") return "ðŸ’»";
+    if (normalized === "desktop") return "ðŸ–¥ï¸";
+    if (normalized === "smartphone") return "ðŸ“±";
 
-    return "🔧";
+    return "ðŸ”§";
   }
 
   function getDeviceCategoryLabel(category) {
@@ -547,7 +561,7 @@ export default function Home() {
 
           if (!deviceData.success) {
             alert(
-              "Cliente creato, ma il dispositivo non è stato salvato: " +
+              "Cliente creato, ma il dispositivo non Ã¨ stato salvato: " +
               (deviceData.error || "errore dispositivo")
             );
             await loadData();
@@ -953,7 +967,7 @@ export default function Home() {
 
   function normalizeGuidePayload(payload) {
     return {
-      icon: String(payload.icon || "💡").trim(),
+      icon: String(payload.icon || "ðŸ’¡").trim(),
       title: String(payload.title || "").trim(),
       description: String(payload.description || "").trim(),
       categoria: String(payload.categoria || "generale").trim(),
@@ -1016,7 +1030,7 @@ export default function Home() {
   function editGuide(guide) {
     setEditingGuideId(guide.id);
     setGuideForm({
-      icon: guide.icon || "💡",
+      icon: guide.icon || "ðŸ’¡",
       title: guide.title || "",
       description: guide.description || "",
       categoria: guide.categoria || "generale",
@@ -1410,7 +1424,7 @@ export default function Home() {
       }
 
       setLiveImportText("");
-      setLiveMessage(data.duplicate ? "Offerta già presente: aggiornata vista" : "Offerta live importata");
+      setLiveMessage(data.duplicate ? "Offerta giÃ  presente: aggiornata vista" : "Offerta live importata");
       await loadData();
     } catch (err) {
       alert(err.message);
@@ -1522,7 +1536,7 @@ export default function Home() {
         : Boolean(user.privacy_consent);
 
     if (!nextPrivacyConsent) {
-      alert("Il consenso privacy è obbligatorio per mantenere il cliente attivo. Per una revoca privacy completa serve una procedura separata di eliminazione/anomizzazione cliente.");
+      alert("Il consenso privacy Ã¨ obbligatorio per mantenere il cliente attivo. Per una revoca privacy completa serve una procedura separata di eliminazione/anomizzazione cliente.");
       return;
     }
 
@@ -1720,7 +1734,7 @@ export default function Home() {
     }
 
     if (broadcastIndex >= customers.length) {
-      alert("Hai già aperto WhatsApp per tutti i clienti in lista.");
+      alert("Hai giÃ  aperto WhatsApp per tutti i clienti in lista.");
       return;
     }
 
@@ -2179,6 +2193,47 @@ export default function Home() {
     a.remove();
 
     URL.revokeObjectURL(url);
+  }
+
+
+  function getSystemStatusLabel(status) {
+    if (status === "ok") return "OK";
+    if (status === "warning") return "OK con avvisi";
+    if (status === "error") return "ERRORE";
+    return "Non testato";
+  }
+
+  function getSystemBadgeClass(status) {
+    if (status === "ok") return "badge badge-green";
+    if (status === "warning") return "badge badge-orange";
+    if (status === "error") return "badge badge-red";
+    return "badge badge-blue";
+  }
+
+  function formatSystemDate(value) {
+    if (!value) return "-";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return value;
+    return date.toLocaleString("it-IT", { day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" });
+  }
+
+  function formatFileSize(bytes) {
+    const value = Number(bytes || 0);
+    if (!value) return "0 MB";
+    return `${(value / 1024 / 1024).toFixed(2)} MB`;
+  }
+
+  function getSystemServiceList() {
+    const services = systemStatus?.services || {};
+    return [
+      services.backend || { label: "Backend", status: "unknown", message: "Non verificato" },
+      services.postgres || { label: "PostgreSQL", status: "unknown", message: "Non verificato" },
+      services.frontend || { label: "Frontend", status: "unknown", message: "Non verificato" },
+      services.public || { label: "Dominio pubblico", status: "unknown", message: "Non verificato" },
+      services.telegram || { label: "Telegram Live", status: "unknown", message: "Non verificato" },
+      services.whatsapp || { label: "WhatsApp", status: "unknown", message: "Non verificato" },
+      services.backup || { label: "Backup", status: "unknown", message: "Non verificato" },
+    ];
   }
 
   function renderTopbarTitle() {
@@ -3116,7 +3171,7 @@ export default function Home() {
                       {editingUserId ? "Modifica cliente" : "Nuovo cliente + dispositivo"}
                     </h2>
                     <div className="panel-subtitle">
-                      Inserisci i dati essenziali del cliente. Il primo dispositivo è obbligatorio solo per un nuovo cliente.
+                      Inserisci i dati essenziali del cliente. Il primo dispositivo Ã¨ obbligatorio solo per un nuovo cliente.
                     </div>
                   </div>
 
@@ -3524,8 +3579,8 @@ export default function Home() {
                                         <div>
                                           <div className="row-title">Consensi comunicazione</div>
                                           <div className="row-subtitle">
-                                            Privacy: {user.privacy_consent ? "attiva" : "mancante"} ·
-                                            Marketing: {user.marketing_consent ? "attivo" : "non attivo"} ·
+                                            Privacy: {user.privacy_consent ? "attiva" : "mancante"} Â·
+                                            Marketing: {user.marketing_consent ? "attivo" : "non attivo"} Â·
                                             WhatsApp: {user.whatsapp_consent ? "attivo" : "non attivo"}
                                           </div>
                                           {user.consent_note && (
@@ -3598,7 +3653,7 @@ export default function Home() {
                                             <div key={device.id} className="mini-device-item">
                                               <div>
                                                 <strong>{getDeviceIcon(device.categoria)} {device.marca} {device.modello}</strong>
-                                                <span>{getDeviceCategoryLabel(device.categoria)} · Garanzia {formatDate(device.scadenza_garanzia)}</span>
+                                                <span>{getDeviceCategoryLabel(device.categoria)} Â· Garanzia {formatDate(device.scadenza_garanzia)}</span>
                                               </div>
                                               <div className="action-row">
                                                 <button type="button" className="small-button" onClick={() => editDevice(device)}>
@@ -3839,7 +3894,7 @@ export default function Home() {
                     <input
                       value={guideForm.icon}
                       onChange={(e) => setGuideForm({ ...guideForm, icon: e.target.value })}
-                      placeholder="💡"
+                      placeholder="ðŸ’¡"
                     />
                   </Field>
 
@@ -3941,7 +3996,7 @@ export default function Home() {
                           <tr key={guide.id}>
                             <td>
                               <div className="row-title">
-                                {guide.icon || "💡"} {guide.title}
+                                {guide.icon || "ðŸ’¡"} {guide.title}
                               </div>
                               <div className="row-subtitle">
                                 {guide.description}
@@ -4584,7 +4639,7 @@ export default function Home() {
                             <td>
                               <div className="row-title">{offer.title || offer.asin}</div>
                               <div className="row-subtitle">
-                                {offer.asin} · {offer.price_text || "prezzo non rilevato"}
+                                {offer.asin} Â· {offer.price_text || "prezzo non rilevato"}
                               </div>
                             </td>
                             <td>
@@ -4618,6 +4673,99 @@ export default function Home() {
                       )}
                     </tbody>
                   </table>
+                </div>
+              </div>
+            </section>
+          </>
+        )}
+
+
+        {!loading && activeSection === "system" && (
+          <>
+            <section className="kpi-grid">
+              <KpiCard label="Stato generale" value={getSystemStatusLabel(systemStatus?.overall_status)} />
+              <KpiCard label="Backup recenti" value={systemStatus?.backup?.count || 0} />
+              <KpiCard label="Offerte Live 24h" value={systemStatus?.live?.imported_24h || 0} />
+              <KpiCard label="WhatsApp" value={getSystemStatusLabel(systemStatus?.services?.whatsapp?.status)} />
+            </section>
+
+            <section className="dashboard-grid">
+              <div className="panel">
+                <div className="panel-header">
+                  <div>
+                    <h2 className="panel-title">Servizi principali</h2>
+                    <div className="panel-subtitle">Stato letto dal backend e dall'ultimo report giornaliero Patch 58.</div>
+                  </div>
+                  <span className={getSystemBadgeClass(systemStatus?.overall_status)}>{getSystemStatusLabel(systemStatus?.overall_status)}</span>
+                </div>
+                <div className="quick-list">
+                  {getSystemServiceList().map((service) => (
+                    <div key={service.label} className="quick-item">
+                      <div>
+                        <div className="row-title">{service.label}</div>
+                        <div className="muted-text">{service.message || "-"}</div>
+                      </div>
+                      <span className={getSystemBadgeClass(service.status)}>{getSystemStatusLabel(service.status)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="panel">
+                <div className="panel-header">
+                  <div>
+                    <h2 className="panel-title">Ultimo check giornaliero</h2>
+                    <div className="panel-subtitle">Report generato dallo script backup/check automatico.</div>
+                  </div>
+                </div>
+                {!systemStatus?.report?.available ? (
+                  <div className="quick-item">Report non disponibile.</div>
+                ) : (
+                  <div className="quick-list">
+                    <div className="quick-item"><div><div className="row-title">Data</div><div className="muted-text">{systemStatus.report.data || "-"}</div></div></div>
+                    <div className="quick-item"><div><div className="row-title">Backup</div><div className="muted-text">{systemStatus.report.backup || "-"}</div></div></div>
+                    <div className="quick-item"><div><div className="row-title">Offerte Live</div><div className="muted-text">{systemStatus.report.live || "-"}</div></div></div>
+                    <div className="quick-item"><div><div className="row-title">Notifica WhatsApp</div><div className="muted-text">{systemStatus.notification?.available ? `WhatsApp: ${systemStatus.notification.whatsapp || "-"} / Email: ${systemStatus.notification.email || "-"}` : "Non disponibile"}</div></div></div>
+                  </div>
+                )}
+              </div>
+            </section>
+
+            <section className="panel" style={{ marginTop: "18px" }}>
+              <div className="panel-header">
+                <div>
+                  <h2 className="panel-title">Backup disponibili</h2>
+                  <div className="panel-subtitle">Percorso server: {systemStatus?.backup_root || "-"}</div>
+                </div>
+                <button type="button" className="ghost-button" onClick={loadData}>Aggiorna stato</button>
+              </div>
+              <div className="table-wrap">
+                <table>
+                  <thead><tr><th>File</th><th>Dimensione</th><th>Data</th></tr></thead>
+                  <tbody>
+                    {(systemStatus?.backup?.files || []).length === 0 ? (
+                      <tr><td colSpan="3">Nessun backup trovato.</td></tr>
+                    ) : (
+                      (systemStatus?.backup?.files || []).map((file) => (
+                        <tr key={file.name}><td>{file.name}</td><td>{formatFileSize(file.size_bytes)}</td><td>{formatSystemDate(file.last_modified)}</td></tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <section className="dashboard-grid" style={{ marginTop: "18px" }}>
+              <div className="panel">
+                <div className="panel-header"><div><h2 className="panel-title">Avvisi recenti</h2><div className="panel-subtitle">Elementi da verificare, ma non necessariamente bloccanti.</div></div></div>
+                <div className="quick-list">
+                  {(systemStatus?.warnings || []).length === 0 ? <div className="quick-item">Nessun avviso.</div> : (systemStatus?.warnings || []).map((warning, index) => <div key={`${warning}-${index}`} className="quick-item"><div className="muted-text">{warning}</div></div>)}
+                </div>
+              </div>
+              <div className="panel">
+                <div className="panel-header"><div><h2 className="panel-title">Errori recenti</h2><div className="panel-subtitle">Se presenti, richiedono controllo prima del prossimo Git.</div></div></div>
+                <div className="quick-list">
+                  {(systemStatus?.errors || []).length === 0 ? <div className="quick-item">Nessun errore.</div> : (systemStatus?.errors || []).map((error, index) => <div key={`${error}-${index}`} className="quick-item"><div className="muted-text">{error}</div></div>)}
                 </div>
               </div>
             </section>
@@ -4667,7 +4815,7 @@ export default function Home() {
 
             <section className="dashboard-grid">
               <div className="panel">
-                <h2 className="panel-title">Prodotti più cliccati</h2>
+                <h2 className="panel-title">Prodotti piÃ¹ cliccati</h2>
                 <div className="table-wrap" style={{ marginTop: "14px" }}>
                   <table>
                     <thead>
@@ -4738,7 +4886,7 @@ export default function Home() {
               </div>
 
               <div className="panel">
-                <h2 className="panel-title">Clienti più attivi</h2>
+                <h2 className="panel-title">Clienti piÃ¹ attivi</h2>
                 <div className="table-wrap" style={{ marginTop: "14px" }}>
                   <table>
                     <thead>
@@ -4878,7 +5026,7 @@ export default function Home() {
                     </div>
                     <div className="row-subtitle">
                       {broadcastResult.success
-                        ? `Inviati: ${broadcastResult.sent_count || 0} · Errori: ${broadcastResult.failed_count || 0} · Saltati: ${broadcastResult.skipped_count || 0}`
+                        ? `Inviati: ${broadcastResult.sent_count || 0} Â· Errori: ${broadcastResult.failed_count || 0} Â· Saltati: ${broadcastResult.skipped_count || 0}`
                         : (broadcastResult.error || "Errore non specificato")}
                     </div>
                   </div>
@@ -4891,7 +5039,7 @@ export default function Home() {
                     <div className="row-title">Ultimi broadcast</div>
                     <div className="row-subtitle">
                       {broadcastHistory.slice(0, 3).map((item) =>
-                        `${new Date(item.created_at).toLocaleString("it-IT")} · inviati ${item.sent_count}/${item.target_count}`
+                        `${new Date(item.created_at).toLocaleString("it-IT")} Â· inviati ${item.sent_count}/${item.target_count}`
                       ).join(" | ")}
                     </div>
                   </div>
@@ -4990,7 +5138,7 @@ export default function Home() {
                 <div>
                   <h2 className="panel-title">WhatsApp personalizzato</h2>
                   <div className="panel-subtitle">
-                    {whatsAppModalUser.nome} {whatsAppModalUser.cognome} · {whatsAppModalUser.telefono || "telefono non disponibile"}
+                    {whatsAppModalUser.nome} {whatsAppModalUser.cognome} Â· {whatsAppModalUser.telefono || "telefono non disponibile"}
                   </div>
                 </div>
 
@@ -5041,7 +5189,7 @@ export default function Home() {
               </div>
 
               <div className="panel-subtitle" style={{ marginTop: "14px", lineHeight: 1.5 }}>
-                Il messaggio viene aperto in WhatsApp Web/App già compilato. L'invio finale resta manuale, così puoi controllarlo prima di mandarlo.
+                Il messaggio viene aperto in WhatsApp Web/App giÃ  compilato. L'invio finale resta manuale, cosÃ¬ puoi controllarlo prima di mandarlo.
               </div>
             </div>
           </div>
@@ -5134,3 +5282,4 @@ function Field({ label, children }) {
     </div>
   );
 }
+

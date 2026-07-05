@@ -3,6 +3,8 @@ const cors = require("cors");
 const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
 const crypto = require("crypto");
+const fs = require("fs");
+const path = require("path");
 const { searchAmazon } = require("./services/amazon");
 const { searchCreators } = require("./services/creators");
 const {
@@ -318,7 +320,7 @@ function extractEmbeddedAmazonUrl(value) {
       candidates.push(decodeUrlRepeated(paramValue));
     }
   } catch (err) {
-    // Non è un URL parsabile, proviamo comunque con il testo grezzo.
+    // Non Ã¨ un URL parsabile, proviamo comunque con il testo grezzo.
   }
 
   for (const candidate of candidates) {
@@ -498,12 +500,12 @@ function formatEuroAmount(value) {
     return "";
   }
 
-  return `${parsed.toFixed(2).replace(".", ",")} €`;
+  return `${parsed.toFixed(2).replace(".", ",")} â‚¬`;
 }
 
 function extractEuroAmounts(text) {
   const value = String(text || "");
-  const regex = /(?:€|EUR)?\s*([0-9]{1,4}(?:[.,][0-9]{1,2})?)\s*(?:€|euro|EUR)/gi;
+  const regex = /(?:â‚¬|EUR)?\s*([0-9]{1,4}(?:[.,][0-9]{1,2})?)\s*(?:â‚¬|euro|EUR)/gi;
   const amounts = [];
   let match;
 
@@ -536,7 +538,7 @@ function extractEuroAmounts(text) {
 function extractExplicitDiscountPercent(text) {
   const value = String(text || "");
   const patterns = [
-    /(?:-|−)\s*([1-9][0-9]?)\s*%/i,
+    /(?:-|âˆ’)\s*([1-9][0-9]?)\s*%/i,
     /sconto\s*(?:del\s*)?([1-9][0-9]?)\s*%/i,
     /risparmi(?:o|a)?\s*(?:del\s*)?([1-9][0-9]?)\s*%/i,
     /coupon\s*(?:del\s*)?([1-9][0-9]?)\s*%/i
@@ -568,7 +570,7 @@ function extractLivePriceByExplicitPatterns(text) {
   const value = String(text || "").replace(/\s+/g, " ");
 
   const currentInstead = value.match(
-    /(?:prezzo\s*(?:finale|finito)?|solo|a\s+soli|offerta|ora|adesso)?\s*([0-9]{1,4}(?:[.,][0-9]{1,2})?)\s*(?:€|euro|EUR)\s*(?:invece\s+di|anzich[eéè]|al\s+posto\s+di|prima\s+di|da)\s*([0-9]{1,4}(?:[.,][0-9]{1,2})?)\s*(?:€|euro|EUR)/i
+    /(?:prezzo\s*(?:finale|finito)?|solo|a\s+soli|offerta|ora|adesso)?\s*([0-9]{1,4}(?:[.,][0-9]{1,2})?)\s*(?:â‚¬|euro|EUR)\s*(?:invece\s+di|anzich[eÃ©Ã¨]|al\s+posto\s+di|prima\s+di|da)\s*([0-9]{1,4}(?:[.,][0-9]{1,2})?)\s*(?:â‚¬|euro|EUR)/i
   );
 
   if (currentInstead?.[1] && currentInstead?.[2]) {
@@ -584,7 +586,7 @@ function extractLivePriceByExplicitPatterns(text) {
   }
 
   const fromTo = value.match(
-    /(?:da|prezzo\s+normale|prezzo\s+di\s+listino|listino|prima|era)\s*([0-9]{1,4}(?:[.,][0-9]{1,2})?)\s*(?:€|euro|EUR).*?(?:a|ora|adesso|prezzo\s*(?:finale|finito)?)\s*([0-9]{1,4}(?:[.,][0-9]{1,2})?)\s*(?:€|euro|EUR)/i
+    /(?:da|prezzo\s+normale|prezzo\s+di\s+listino|listino|prima|era)\s*([0-9]{1,4}(?:[.,][0-9]{1,2})?)\s*(?:â‚¬|euro|EUR).*?(?:a|ora|adesso|prezzo\s*(?:finale|finito)?)\s*([0-9]{1,4}(?:[.,][0-9]{1,2})?)\s*(?:â‚¬|euro|EUR)/i
   );
 
   if (fromTo?.[1] && fromTo?.[2]) {
@@ -600,7 +602,7 @@ function extractLivePriceByExplicitPatterns(text) {
   }
 
   const normalWithCoupon = value.match(
-    /(?:prezzo\s+(?:normale|di\s+listino|iniziale|precedente)|listino|prima|era|da)\s*([0-9]{1,4}(?:[.,][0-9]{1,2})?)\s*(?:€|euro|EUR).*?(?:coupon|codice|sconto|buono|voucher|extra)\s*(?:da|di)?\s*([0-9]{1,4}(?:[.,][0-9]{1,2})?)\s*(?:€|euro|EUR)/i
+    /(?:prezzo\s+(?:normale|di\s+listino|iniziale|precedente)|listino|prima|era|da)\s*([0-9]{1,4}(?:[.,][0-9]{1,2})?)\s*(?:â‚¬|euro|EUR).*?(?:coupon|codice|sconto|buono|voucher|extra)\s*(?:da|di)?\s*([0-9]{1,4}(?:[.,][0-9]{1,2})?)\s*(?:â‚¬|euro|EUR)/i
   );
 
   if (normalWithCoupon?.[1] && normalWithCoupon?.[2]) {
@@ -616,7 +618,7 @@ function extractLivePriceByExplicitPatterns(text) {
   }
 
   const couponThenNormal = value.match(
-    /(?:coupon|codice|sconto|buono|voucher|extra)\s*(?:da|di)?\s*([0-9]{1,4}(?:[.,][0-9]{1,2})?)\s*(?:€|euro|EUR).*?(?:prezzo\s+(?:normale|di\s+listino|iniziale|precedente)|listino|prima|era|da)\s*([0-9]{1,4}(?:[.,][0-9]{1,2})?)\s*(?:€|euro|EUR)/i
+    /(?:coupon|codice|sconto|buono|voucher|extra)\s*(?:da|di)?\s*([0-9]{1,4}(?:[.,][0-9]{1,2})?)\s*(?:â‚¬|euro|EUR).*?(?:prezzo\s+(?:normale|di\s+listino|iniziale|precedente)|listino|prima|era|da)\s*([0-9]{1,4}(?:[.,][0-9]{1,2})?)\s*(?:â‚¬|euro|EUR)/i
   );
 
   if (couponThenNormal?.[1] && couponThenNormal?.[2]) {
@@ -632,7 +634,7 @@ function extractLivePriceByExplicitPatterns(text) {
   }
 
   const finalWithCoupon = value.match(
-    /(?:prezzo\s*(?:finale|finito)?|finale|totale|paghi|a\s+soli|solo)\s*([0-9]{1,4}(?:[.,][0-9]{1,2})?)\s*(?:€|euro|EUR).*?(?:coupon|codice|sconto|buono|voucher|extra)\s*(?:da|di)?\s*([0-9]{1,4}(?:[.,][0-9]{1,2})?)\s*(?:€|euro|EUR)/i
+    /(?:prezzo\s*(?:finale|finito)?|finale|totale|paghi|a\s+soli|solo)\s*([0-9]{1,4}(?:[.,][0-9]{1,2})?)\s*(?:â‚¬|euro|EUR).*?(?:coupon|codice|sconto|buono|voucher|extra)\s*(?:da|di)?\s*([0-9]{1,4}(?:[.,][0-9]{1,2})?)\s*(?:â‚¬|euro|EUR)/i
   );
 
   if (finalWithCoupon?.[1] && finalWithCoupon?.[2]) {
@@ -648,7 +650,7 @@ function extractLivePriceByExplicitPatterns(text) {
   }
 
   const normalWithPercent = value.match(
-    /(?:prezzo\s+(?:normale|di\s+listino|iniziale|precedente)|listino|prima|era|da)\s*([0-9]{1,4}(?:[.,][0-9]{1,2})?)\s*(?:€|euro|EUR).*?(?:-|−|sconto\s*(?:del)?|coupon\s*(?:del)?)\s*([1-9][0-9]?)\s*%/i
+    /(?:prezzo\s+(?:normale|di\s+listino|iniziale|precedente)|listino|prima|era|da)\s*([0-9]{1,4}(?:[.,][0-9]{1,2})?)\s*(?:â‚¬|euro|EUR).*?(?:-|âˆ’|sconto\s*(?:del)?|coupon\s*(?:del)?)\s*([1-9][0-9]?)\s*%/i
   );
 
   if (normalWithPercent?.[1] && normalWithPercent?.[2]) {
@@ -670,8 +672,8 @@ function extractLivePriceByExplicitPatterns(text) {
 function isPreviousPriceAmount(item) {
   const before = item.before || "";
 
-  return /(invece\s+di|anzich[eéè]|prima|listino|precedente|barrato|era|costava|prezzo\s+(?:normale|di\s+partenza|iniziale|consigliato|di\s+listino)|da\s*)$/i.test(before) ||
-    /(invece\s+di|anzich[eéè]|prima|listino|precedente|barrato|era|costava|prezzo\s+(?:normale|di\s+partenza|iniziale|consigliato|di\s+listino))/i.test(before);
+  return /(invece\s+di|anzich[eÃ©Ã¨]|prima|listino|precedente|barrato|era|costava|prezzo\s+(?:normale|di\s+partenza|iniziale|consigliato|di\s+listino)|da\s*)$/i.test(before) ||
+    /(invece\s+di|anzich[eÃ©Ã¨]|prima|listino|precedente|barrato|era|costava|prezzo\s+(?:normale|di\s+partenza|iniziale|consigliato|di\s+listino))/i.test(before);
 }
 
 function isCurrentPriceAmount(item) {
@@ -839,7 +841,7 @@ function buildLiveOfferTitle(text, asin) {
     .replace(/https?:\/\/[^\s<>"')]+/gi, "")
     .split(/\r?\n/)
     .map((line) => line
-      .replace(/[🔥💥🚨✅⭐️⭐🎁👉➡️🔗]/g, "")
+      .replace(/[ðŸ”¥ðŸ’¥ðŸš¨âœ…â­ï¸â­ðŸŽðŸ‘‰âž¡ï¸ðŸ”—]/g, "")
       .replace(/\s+/g, " ")
       .trim()
     )
@@ -1561,7 +1563,7 @@ function getDeviceAccessorySearches(device) {
       `${fallbackBase} monitor pc`,
       `${fallbackBase} webcam`,
       `${fallbackBase} casse pc`,
-      `${fallbackBase} gruppo continuità`
+      `${fallbackBase} gruppo continuitÃ `
     ];
   }
 
@@ -1829,6 +1831,272 @@ app.post("/api/live-offers/heartbeat", verifyLiveImportSecret, async (req, res) 
 
 app.use("/api", authenticateAdmin);
 
+
+/*
+|--------------------------------------------------------------------------
+| ADMIN - SYSTEM STATUS
+|--------------------------------------------------------------------------
+*/
+
+function saReadTextFileSafe(filePath) {
+  try {
+    return fs.readFileSync(filePath, "utf8").replace(/^\uFEFF/, "");
+  } catch (err) {
+    return "";
+  }
+}
+
+function saExtractReportValue(text, label) {
+  const prefix = `${label}:`;
+  const line = String(text || "").split(/\r?\n/).find((item) => item.trim().startsWith(prefix));
+  if (!line) return "";
+  return line.substring(line.indexOf(":") + 1).trim();
+}
+
+function saParseKeyValueText(text) {
+  const result = {};
+  String(text || "").split(/\r?\n/).forEach((line) => {
+    const index = line.indexOf(":");
+    if (index <= 0) return;
+    const key = line.slice(0, index).trim();
+    const value = line.slice(index + 1).trim();
+    if (key) result[key] = value;
+  });
+  return result;
+}
+
+function saCollectReportSection(text, title) {
+  const lines = String(text || "").split(/\r?\n/);
+  const start = lines.findIndex((line) => line.trim() === `${title}:`);
+  if (start < 0) return [];
+  const collected = [];
+  for (let index = start + 1; index < lines.length; index += 1) {
+    const trimmed = lines[index].trim();
+    if (!trimmed) continue;
+    if (/^[A-Za-zÀ-ÿ ]+:$/.test(trimmed) || /^Durata:/i.test(trimmed)) break;
+    collected.push(trimmed.replace(/^[-•]\s*/, ""));
+  }
+  return collected;
+}
+
+function saNormalizeStatus(value) {
+  const text = String(value || "").toLowerCase();
+  if (text.includes("errore") || text.includes("error") || text.includes("ko") || text.includes("fallito")) return "error";
+  if (text.includes("avvisi") || text.includes("warning") || text.includes("non testato") || text.includes("verificare")) return "warning";
+  if (text.includes("ok") || text.includes("true") || text === "200" || text.startsWith("200")) return "ok";
+  return "unknown";
+}
+
+function saFileSizeMb(bytes) {
+  return Math.round((Number(bytes || 0) / 1024 / 1024) * 100) / 100;
+}
+
+function saListBackupFiles(backupRoot) {
+  try {
+    return fs.readdirSync(backupRoot)
+      .filter((name) => /^SmartAssistanceBackup-.*\.zip$/i.test(name))
+      .map((name) => {
+        const fullPath = path.join(backupRoot, name);
+        const stat = fs.statSync(fullPath);
+        return {
+          name,
+          size_bytes: stat.size,
+          size_mb: saFileSizeMb(stat.size),
+          last_modified: stat.mtime.toISOString()
+        };
+      })
+      .sort((a, b) => new Date(b.last_modified).getTime() - new Date(a.last_modified).getTime());
+  } catch (err) {
+    return [];
+  }
+}
+
+app.get("/api/system-status", async (req, res) => {
+  const backupRoot = process.env.SA_BACKUP_ROOT || "/smart-assistance-backups";
+  const result = {
+    success: true,
+    generated_at: new Date().toISOString(),
+    overall_status: "unknown",
+    backup_root: backupRoot,
+    services: {
+      backend: { status: "ok", label: "Backend", message: "API Admin raggiungibile" },
+      postgres: { status: "unknown", label: "PostgreSQL", message: "Non verificato" },
+      frontend: { status: "unknown", label: "Frontend", message: "Non verificato" },
+      public: { status: "unknown", label: "Dominio pubblico", message: "Non verificato" },
+      telegram: { status: "unknown", label: "Telegram Live", message: "Non verificato" },
+      whatsapp: { status: "unknown", label: "WhatsApp", message: "Non verificato" },
+      backup: { status: "unknown", label: "Backup", message: "Non verificato" }
+    },
+    backup: { accessible: false, count: 0, latest: null, files: [] },
+    report: {
+      available: false,
+      status_line: "",
+      data: "",
+      backup: "",
+      backend: "",
+      frontend: "",
+      public: "",
+      postgres_dump: "",
+      live: "",
+      duration: "",
+      warnings: [],
+      errors: []
+    },
+    notification: { available: false, data: "", report: "", whatsapp: "", email: "" },
+    live: { imported_24h: 0, active_live: 0, latest: null, service: null },
+    warnings: [],
+    errors: []
+  };
+
+  try {
+    const dbResult = await pool.query("SELECT NOW() AS now, current_database() AS database_name, current_user AS user_name");
+    const dbInfo = dbResult.rows[0] || {};
+    result.services.postgres = {
+      status: "ok",
+      label: "PostgreSQL",
+      message: `${dbInfo.database_name || "database"} / ${dbInfo.user_name || "utente"}`,
+      checked_at: dbInfo.now || null
+    };
+  } catch (err) {
+    result.services.postgres = { status: "error", label: "PostgreSQL", message: err.message };
+    result.errors.push(`PostgreSQL: ${err.message}`);
+  }
+
+  try {
+    const liveCountsResult = await pool.query(`
+      SELECT
+        COUNT(*) FILTER (WHERE status = 'published' AND expires_at > NOW())::int AS active_live,
+        COUNT(*) FILTER (WHERE imported_at >= NOW() - INTERVAL '24 hours')::int AS imported_24h,
+        COUNT(*) FILTER (WHERE imported_at::date = CURRENT_DATE)::int AS imported_today,
+        COUNT(*)::int AS total
+      FROM live_offers
+    `);
+    const latestLiveResult = await pool.query(`
+      SELECT id, asin, title, source_channel, status, imported_at, expires_at
+      FROM live_offers
+      ORDER BY imported_at DESC
+      LIMIT 1
+    `);
+    const stateResult = await pool.query(`
+      SELECT key, value, updated_at
+      FROM app_runtime_state
+      WHERE key IN (
+        'telegram_account_heartbeat_at',
+        'telegram_account_status',
+        'telegram_account_message',
+        'telegram_account_sources_count',
+        'telegram_account_imported_count',
+        'telegram_account_skipped_count',
+        'telegram_account_error_count'
+      )
+    `);
+    const state = Object.fromEntries(stateResult.rows.map((row) => [row.key, row.value]));
+    const heartbeatAt = state.telegram_account_heartbeat_at || null;
+    const heartbeatAgeSeconds = heartbeatAt ? Math.round((Date.now() - new Date(heartbeatAt).getTime()) / 1000) : null;
+    let telegramStatus = "unknown";
+    if (heartbeatAgeSeconds === null) telegramStatus = "unknown";
+    else if (heartbeatAgeSeconds <= 180) telegramStatus = "ok";
+    else if (heartbeatAgeSeconds <= 600) telegramStatus = "warning";
+    else telegramStatus = "error";
+    result.live = {
+      ...(liveCountsResult.rows[0] || {}),
+      latest: latestLiveResult.rows[0] || null,
+      service: {
+        status: telegramStatus,
+        heartbeat_at: heartbeatAt,
+        heartbeat_age_seconds: heartbeatAgeSeconds,
+        raw_status: state.telegram_account_status || "",
+        message: state.telegram_account_message || "",
+        sources_count: Number.parseInt(state.telegram_account_sources_count || "0", 10) || 0,
+        imported_count: Number.parseInt(state.telegram_account_imported_count || "0", 10) || 0,
+        skipped_count: Number.parseInt(state.telegram_account_skipped_count || "0", 10) || 0,
+        error_count: Number.parseInt(state.telegram_account_error_count || "0", 10) || 0
+      }
+    };
+    result.services.telegram = {
+      status: telegramStatus,
+      label: "Telegram Live",
+      message: heartbeatAt ? `Heartbeat ${heartbeatAgeSeconds}s fa - ${state.telegram_account_message || state.telegram_account_status || "ok"}` : "Heartbeat non disponibile"
+    };
+  } catch (err) {
+    result.services.telegram = { status: "warning", label: "Telegram Live", message: err.message };
+    result.warnings.push(`Telegram/Live: ${err.message}`);
+  }
+
+  const reportText = saReadTextFileSafe(path.join(backupRoot, "last-daily-check-report.txt"));
+  const notificationText = saReadTextFileSafe(path.join(backupRoot, "last-notification-status.txt"));
+
+  if (reportText) {
+    const lines = reportText.split(/\r?\n/).filter(Boolean);
+    const statusLine = lines[0] || "";
+    const reportStatus = saNormalizeStatus(statusLine);
+    result.report = {
+      available: true,
+      status_line: statusLine,
+      data: saExtractReportValue(reportText, "Data"),
+      backup: saExtractReportValue(reportText, "Backup"),
+      backend: saExtractReportValue(reportText, "Backend"),
+      frontend: saExtractReportValue(reportText, "Frontend"),
+      public: saExtractReportValue(reportText, "Pubblico"),
+      postgres_dump: saExtractReportValue(reportText, "Postgres dump"),
+      live: saExtractReportValue(reportText, "Offerte Live 24h"),
+      duration: saExtractReportValue(reportText, "Durata"),
+      warnings: saCollectReportSection(reportText, "Avvisi"),
+      errors: saCollectReportSection(reportText, "Errori"),
+      raw_excerpt: lines.slice(0, 35)
+    };
+    result.services.frontend = { status: saNormalizeStatus(result.report.frontend), label: "Frontend", message: result.report.frontend || "Non verificato" };
+    result.services.public = { status: saNormalizeStatus(result.report.public), label: "Dominio pubblico", message: result.report.public || "Non verificato" };
+    result.services.backup = { status: reportStatus, label: "Backup", message: result.report.backup || statusLine };
+    result.warnings.push(...result.report.warnings);
+    result.errors.push(...result.report.errors);
+  } else {
+    result.warnings.push("Report giornaliero non trovato nel percorso backup montato sul backend");
+  }
+
+  if (notificationText) {
+    const notification = saParseKeyValueText(notificationText);
+    result.notification = {
+      available: true,
+      data: notification.Data || "",
+      report: notification.Report || "",
+      whatsapp: notification.WhatsApp || "",
+      email: notification.Email || ""
+    };
+    result.services.whatsapp = {
+      status: saNormalizeStatus(notification.WhatsApp || ""),
+      label: "WhatsApp",
+      message: notification.WhatsApp === "True" ? `Ultima notifica OK - ${notification.Data || "data non disponibile"}` : "Ultima notifica non confermata"
+    };
+  } else {
+    result.warnings.push("Stato ultima notifica non trovato nel percorso backup montato sul backend");
+  }
+
+  result.backup.files = saListBackupFiles(backupRoot).slice(0, 10);
+  result.backup.count = result.backup.files.length;
+  result.backup.latest = result.backup.files[0] || null;
+  result.backup.accessible = result.backup.files.length > 0 || Boolean(reportText || notificationText);
+
+  if (!result.backup.latest) {
+    result.services.backup = { status: "error", label: "Backup", message: "Nessun backup ZIP trovato" };
+    result.errors.push("Nessun backup ZIP trovato");
+  } else if (result.backup.latest.size_bytes < 1024 * 1024) {
+    result.services.backup.status = "warning";
+    result.services.backup.message = `${result.backup.latest.name} - dimensione bassa (${result.backup.latest.size_mb} MB)`;
+    result.warnings.push("Ultimo backup con dimensione inferiore a 1 MB");
+  }
+
+  const statuses = Object.values(result.services).map((service) => service.status);
+  if (result.errors.length > 0 || statuses.some((status) => status === "error")) result.overall_status = "error";
+  else if (result.warnings.length > 0 || statuses.some((status) => status === "warning" || status === "unknown")) result.overall_status = "warning";
+  else result.overall_status = "ok";
+
+  result.warnings = [...new Set(result.warnings)].slice(0, 20);
+  result.errors = [...new Set(result.errors)].slice(0, 20);
+  res.json(result);
+});
+
+
 /*
 |--------------------------------------------------------------------------
 | USERS
@@ -2003,7 +2271,7 @@ app.put("/api/users/:id", async (req, res) => {
     if (!privacy_consent) {
       return res.status(400).json({
         success: false,
-        error: "Il consenso privacy è obbligatorio per mantenere il cliente attivo."
+        error: "Il consenso privacy Ã¨ obbligatorio per mantenere il cliente attivo."
       });
     }
 
@@ -3202,7 +3470,7 @@ app.get("/api/receipt-upload/:token", async (req, res) => {
     if (item.used_at) {
       return res.status(410).json({
         success: false,
-        error: "Questo link è già stato usato"
+        error: "Questo link Ã¨ giÃ  stato usato"
       });
     }
 
@@ -3309,7 +3577,7 @@ app.post("/api/receipt-upload/:token/receipt", async (req, res) => {
     if (uploadToken.used_at) {
       return res.status(410).json({
         success: false,
-        error: "Questo link è già stato usato"
+        error: "Questo link Ã¨ giÃ  stato usato"
       });
     }
 
@@ -3949,7 +4217,7 @@ app.get("/api/webapp-guides", async (req, res) => {
 app.post("/api/webapp-guides", async (req, res) => {
   try {
     const {
-      icon = "💡",
+      icon = "ðŸ’¡",
       title,
       description,
       categoria = "generale",
@@ -3985,7 +4253,7 @@ app.post("/api/webapp-guides", async (req, res) => {
       RETURNING *
       `,
       [
-        String(icon || "💡").trim(),
+        String(icon || "ðŸ’¡").trim(),
         String(title || "").trim(),
         String(description || "").trim(),
         normalizeGuideCategory(categoria),
@@ -4010,7 +4278,7 @@ app.put("/api/webapp-guides/:id", async (req, res) => {
   try {
     const { id } = req.params;
     const {
-      icon = "💡",
+      icon = "ðŸ’¡",
       title,
       description,
       categoria = "generale",
@@ -4047,7 +4315,7 @@ app.put("/api/webapp-guides/:id", async (req, res) => {
       RETURNING *
       `,
       [
-        String(icon || "💡").trim(),
+        String(icon || "ðŸ’¡").trim(),
         String(title || "").trim(),
         String(description || "").trim(),
         normalizeGuideCategory(categoria),
@@ -4604,6 +4872,7 @@ app.listen(process.env.PORT || 3006, () => {
   setInterval(pollTelegramLiveOffers, pollSeconds * 1000);
   setTimeout(pollTelegramLiveOffers, 5000);
 });
+
 
 
 

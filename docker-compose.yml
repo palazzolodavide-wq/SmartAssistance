@@ -1,4 +1,4 @@
-﻿services:
+services:
 
   postgres:
     image: postgres:16
@@ -26,10 +26,14 @@
     env_file:
       - ./backend/.env
 
+    environment:
+      SA_BACKUP_ROOT: /smart-assistance-backups
+
     command: sh -c "npm install && npm start"
 
     volumes:
       - ./backend:/app
+      - ./backups:/smart-assistance-backups:ro
 
     ports:
       - "3006:3006"
