@@ -1,0 +1,37 @@
+{
+  "Backup": {
+    "Root": "C:\\SmartAssistance\\backups",
+    "RetentionDays": 14,
+    "Compress": true,
+    "DatabaseContainer": "sa-postgres",
+    "ProjectContainers": [
+      "sa-caddy",
+      "sa-frontend",
+      "sa-backend",
+      "sa-postgres",
+      "sa-telegram-live"
+    ],
+    "BackendHealthUrl": "http://localhost:3006/health",
+    "FrontendUrl": "http://localhost:3005/login",
+    "PublicUrl": "https://7590.ns0.it/"
+  },
+  "Notifications": {
+    "WhatsApp": {
+      "Enabled": false,
+      "BaseUrl": "http://localhost:3000",
+      "ApiKeyEnv": "SA_WAHA_API_KEY",
+      "Session": "default",
+      "ChatId": ""
+    },
+    "Email": {
+      "Enabled": false,
+      "SmtpServer": "",
+      "SmtpPort": 587,
+      "UseSsl": true,
+      "From": "",
+      "To": [],
+      "Username": "",
+      "PasswordEnv": "SA_MONITOR_SMTP_PASSWORD"
+    }
+  }
+}
