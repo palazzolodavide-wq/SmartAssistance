@@ -1,4 +1,4 @@
-const express = require("express");
+﻿const express = require("express");
 const cors = require("cors");
 const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
@@ -1470,6 +1470,18 @@ async function pollTelegramLiveOffers() {
 */
 
 function authenticateAdmin(req, res, next) {
+  // PATCH_59_3_2_LIVE_OFFERS_PUBLIC_BYPASS
+  // Express puo' esporre la route come /api/app/TOKEN/live-offers in originalUrl
+  // oppure come /app/TOKEN/live-offers in req.path quando il middleware e' montato su /api.
+  // Questo bypass pubblico evita il falso errore JWT "Token mancante" sulla paginazione Live.
+  const originalPathOnlyLivePublic = String(req.originalUrl || req.url || "").split("?")[0];
+  const mountedPathOnlyLivePublic = String(req.path || "").split("?")[0];
+  if (
+    /^\/api\/app\/[^/]+\/live-offers$/.test(originalPathOnlyLivePublic) ||
+    /^\/app\/[^/]+\/live-offers$/.test(mountedPathOnlyLivePublic)
+  ) {
+    return next();
+  }
   const publicApiRoutes = [
     /^\/api\/app\/[^/]+$/,
     /^\/api\/app\/[^/]+\/live-offers$/,
@@ -1482,6 +1494,18 @@ function authenticateAdmin(req, res, next) {
     /^\/receipt-upload\/[^/]+$/,
     /^\/receipt-upload\/[^/]+\/receipt$/
   ];
+  // PATCH_59_3_1_PUBLIC_ROUTE_PATH_FIX
+  // Usa sempre il path senza query string per riconoscere le route pubbliche WebApp.
+  // Necessario per URL tipo /api/app/TOKEN/live-offers?page=2.
+  const requestPathForAuth = String(req.path || req.originalUrl || req.url || "").split("?")[0];
+  if (publicApiRoutes.some((route) => route.test(requestPathForAuth))) {
+    return next();
+  }
+  // PATCH 59.3: public route matching must ignore query string
+  const publicRoutePath = req.path || String(req.originalUrl || req.url || "").split("?")[0];
+  if (publicApiRoutes.some((route) => route.test(publicRoutePath))) {
+    return next();
+  }
 
   const isPublicApiRoute = publicApiRoutes.some((route) =>
     route.test(req.originalUrl) || route.test(req.path)
@@ -4872,6 +4896,9 @@ app.listen(process.env.PORT || 3006, () => {
   setInterval(pollTelegramLiveOffers, pollSeconds * 1000);
   setTimeout(pollTelegramLiveOffers, 5000);
 });
+
+
+
 
 
 
