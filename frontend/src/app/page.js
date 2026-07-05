@@ -95,7 +95,7 @@ const GUIDE_CATEGORIES = [
 ];
 
 const EMPTY_GUIDE_FORM = {
-  icon: "ðŸ’¡",
+  icon: "",
   title: "",
   description: "",
   categoria: "generale",
@@ -395,15 +395,8 @@ export default function Home() {
   }
 
   function getDeviceIcon(category) {
-    const normalized = normalizeDeviceCategory(category);
-
-    if (normalized === "notebook") return "ðŸ’»";
-    if (normalized === "desktop") return "ðŸ–¥ï¸";
-    if (normalized === "smartphone") return "ðŸ“±";
-
-    return "ðŸ”§";
+    return "";
   }
-
   function getDeviceCategoryLabel(category) {
     const normalized = normalizeDeviceCategory(category);
 
@@ -561,7 +554,7 @@ export default function Home() {
 
           if (!deviceData.success) {
             alert(
-              "Cliente creato, ma il dispositivo non Ã¨ stato salvato: " +
+              "Cliente creato, ma il dispositivo non è stato salvato: " +
               (deviceData.error || "errore dispositivo")
             );
             await loadData();
@@ -967,7 +960,7 @@ export default function Home() {
 
   function normalizeGuidePayload(payload) {
     return {
-      icon: String(payload.icon || "ðŸ’¡").trim(),
+      icon: String(payload.icon || "").trim(),
       title: String(payload.title || "").trim(),
       description: String(payload.description || "").trim(),
       categoria: String(payload.categoria || "generale").trim(),
@@ -1030,7 +1023,7 @@ export default function Home() {
   function editGuide(guide) {
     setEditingGuideId(guide.id);
     setGuideForm({
-      icon: guide.icon || "ðŸ’¡",
+      icon: guide.icon || "",
       title: guide.title || "",
       description: guide.description || "",
       categoria: guide.categoria || "generale",
@@ -1424,7 +1417,7 @@ export default function Home() {
       }
 
       setLiveImportText("");
-      setLiveMessage(data.duplicate ? "Offerta giÃ  presente: aggiornata vista" : "Offerta live importata");
+      setLiveMessage(data.duplicate ? "Offerta già presente: aggiornata vista" : "Offerta live importata");
       await loadData();
     } catch (err) {
       alert(err.message);
@@ -1536,7 +1529,7 @@ export default function Home() {
         : Boolean(user.privacy_consent);
 
     if (!nextPrivacyConsent) {
-      alert("Il consenso privacy Ã¨ obbligatorio per mantenere il cliente attivo. Per una revoca privacy completa serve una procedura separata di eliminazione/anomizzazione cliente.");
+      alert("Il consenso privacy è obbligatorio per mantenere il cliente attivo. Per una revoca privacy completa serve una procedura separata di eliminazione/anomizzazione cliente.");
       return;
     }
 
@@ -1734,7 +1727,7 @@ export default function Home() {
     }
 
     if (broadcastIndex >= customers.length) {
-      alert("Hai giÃ  aperto WhatsApp per tutti i clienti in lista.");
+      alert("Hai già aperto WhatsApp per tutti i clienti in lista.");
       return;
     }
 
@@ -3122,7 +3115,7 @@ export default function Home() {
                             {device.nome} {device.cognome}
                           </div>
                           <div className="row-subtitle">
-                            {getDeviceIcon(device.categoria)} {device.marca} {device.modello}
+                            {device.marca} {device.modello}
                           </div>
                         </div>
                         <span className={getWarrantyClass(device.scadenza_garanzia)}>
@@ -3209,7 +3202,7 @@ export default function Home() {
                       {editingUserId ? "Modifica cliente" : "Nuovo cliente + dispositivo"}
                     </h2>
                     <div className="panel-subtitle">
-                      Inserisci i dati essenziali del cliente. Il primo dispositivo Ã¨ obbligatorio solo per un nuovo cliente.
+                      Inserisci i dati essenziali del cliente. Il primo dispositivo è obbligatorio solo per un nuovo cliente.
                     </div>
                   </div>
 
@@ -3617,8 +3610,8 @@ export default function Home() {
                                         <div>
                                           <div className="row-title">Consensi comunicazione</div>
                                           <div className="row-subtitle">
-                                            Privacy: {user.privacy_consent ? "attiva" : "mancante"} Â·
-                                            Marketing: {user.marketing_consent ? "attivo" : "non attivo"} Â·
+                                            Privacy: {user.privacy_consent ? "attiva" : "mancante"} ·
+                                            Marketing: {user.marketing_consent ? "attivo" : "non attivo"} ·
                                             WhatsApp: {user.whatsapp_consent ? "attivo" : "non attivo"}
                                           </div>
                                           {user.consent_note && (
@@ -3698,8 +3691,8 @@ export default function Home() {
                                           {customerDevices.map((device) => (
                                             <div key={device.id} className="mini-device-item">
                                               <div>
-                                                <strong>{getDeviceIcon(device.categoria)} {device.marca} {device.modello}</strong>
-                                                <span>{getDeviceCategoryLabel(device.categoria)} Â· Garanzia {formatDate(device.scadenza_garanzia)}</span>
+                                                <strong>{device.marca} {device.modello}</strong>
+                                                <span>{getDeviceCategoryLabel(device.categoria)} · Garanzia {formatDate(device.scadenza_garanzia)}</span>
                                               </div>
                                               <div className="action-row">
                                                 <button type="button" className="small-button" onClick={() => editDevice(device)}>
@@ -3885,7 +3878,7 @@ export default function Home() {
                             <div className="row-subtitle">{device.customer_code || "-"}</div>
                           </td>
                           <td>
-                            <div className="row-title">{getDeviceIcon(device.categoria)} {device.marca} {device.modello}</div>
+                            <div className="row-title">{device.marca} {device.modello}</div>
                             <div className="row-subtitle">{getDeviceCategoryLabel(device.categoria)}</div>
                           </td>
                           <td>
@@ -3940,7 +3933,7 @@ export default function Home() {
                     <input
                       value={guideForm.icon}
                       onChange={(e) => setGuideForm({ ...guideForm, icon: e.target.value })}
-                      placeholder="ðŸ’¡"
+                      placeholder=""
                     />
                   </Field>
 
@@ -4042,7 +4035,7 @@ export default function Home() {
                           <tr key={guide.id}>
                             <td>
                               <div className="row-title">
-                                {guide.icon || "ðŸ’¡"} {guide.title}
+                                {guide.title}
                               </div>
                               <div className="row-subtitle">
                                 {guide.description}
@@ -4685,7 +4678,7 @@ export default function Home() {
                             <td>
                               <div className="row-title">{offer.title || offer.asin}</div>
                               <div className="row-subtitle">
-                                {offer.asin} Â· {offer.price_text || "prezzo non rilevato"}
+                                {offer.asin} · {offer.price_text || "prezzo non rilevato"}
                               </div>
                             </td>
                             <td>
@@ -4892,7 +4885,7 @@ export default function Home() {
 
             <section className="dashboard-grid">
               <div className="panel">
-                <h2 className="panel-title">Prodotti piÃ¹ cliccati</h2>
+                <h2 className="panel-title">Prodotti più cliccati</h2>
                 <div className="table-wrap" style={{ marginTop: "14px" }}>
                   <table>
                     <thead>
@@ -4963,7 +4956,7 @@ export default function Home() {
               </div>
 
               <div className="panel">
-                <h2 className="panel-title">Clienti piÃ¹ attivi</h2>
+                <h2 className="panel-title">Clienti più attivi</h2>
                 <div className="table-wrap" style={{ marginTop: "14px" }}>
                   <table>
                     <thead>
@@ -5103,7 +5096,7 @@ export default function Home() {
                     </div>
                     <div className="row-subtitle">
                       {broadcastResult.success
-                        ? `Inviati: ${broadcastResult.sent_count || 0} Â· Errori: ${broadcastResult.failed_count || 0} Â· Saltati: ${broadcastResult.skipped_count || 0}`
+                        ? `Inviati: ${broadcastResult.sent_count || 0} · Errori: ${broadcastResult.failed_count || 0} · Saltati: ${broadcastResult.skipped_count || 0}`
                         : (broadcastResult.error || "Errore non specificato")}
                     </div>
                   </div>
@@ -5116,7 +5109,7 @@ export default function Home() {
                     <div className="row-title">Ultimi broadcast</div>
                     <div className="row-subtitle">
                       {broadcastHistory.slice(0, 3).map((item) =>
-                        `${new Date(item.created_at).toLocaleString("it-IT")} Â· inviati ${item.sent_count}/${item.target_count}`
+                        `${new Date(item.created_at).toLocaleString("it-IT")} · inviati ${item.sent_count}/${item.target_count}`
                       ).join(" | ")}
                     </div>
                   </div>
@@ -5215,7 +5208,7 @@ export default function Home() {
                 <div>
                   <h2 className="panel-title">WhatsApp personalizzato</h2>
                   <div className="panel-subtitle">
-                    {whatsAppModalUser.nome} {whatsAppModalUser.cognome} Â· {whatsAppModalUser.telefono || "telefono non disponibile"}
+                    {whatsAppModalUser.nome} {whatsAppModalUser.cognome} · {whatsAppModalUser.telefono || "telefono non disponibile"}
                   </div>
                 </div>
 
@@ -5266,7 +5259,7 @@ export default function Home() {
               </div>
 
               <div className="panel-subtitle" style={{ marginTop: "14px", lineHeight: 1.5 }}>
-                Il messaggio viene aperto in WhatsApp Web/App giÃ  compilato. L'invio finale resta manuale, cosÃ¬ puoi controllarlo prima di mandarlo.
+                Il messaggio viene aperto in WhatsApp Web/App già compilato. L'invio finale resta manuale, così puoi controllarlo prima di mandarlo.
               </div>
             </div>
           </div>
@@ -5358,5 +5351,6 @@ function Field({ label, children }) {
     </div>
   );
 }
+
 
 
