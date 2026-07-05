@@ -1473,11 +1473,14 @@ function authenticateAdmin(req, res, next) {
   const publicApiRoutes = [
     /^\/api\/app\/[^/]+$/,
     /^\/api\/app\/[^/]+\/live-offers$/,
+    // PATCH_64_1_ANALYTICS_PUBLIC_ROUTES
+    /^\/api\/app\/[^/]+\/analytics\/ping$/,
     /^\/api\/app\/[^/]+\/consents$/,
     /^\/api\/app\/[^/]+\/click$/,
     /^\/api\/receipt-upload\/[^/]+$/,
     /^\/api\/receipt-upload\/[^/]+\/receipt$/,
     /^\/app\/[^/]+$/,
+    /^\/app\/[^/]+\/analytics\/ping$/,
     /^\/app\/[^/]+\/live-offers$/,
     /^\/app\/[^/]+\/click$/,
     /^\/receipt-upload\/[^/]+$/,
@@ -1979,6 +1982,60 @@ function saListBackupFiles(backupRoot) {
     return [];
   }
 }
+
+
+
+// PATCH_64_1_ANALYTICS_ADMIN_SUMMARY_START
+app.get("/api/analytics/summary", async (req, res) => {
+  try {
+    await ensureSaAnalyticsTables();
+
+    const result = await pool.query(`
+      WITH metrics AS (
+        SELECT
+          (SELECT COUNT(*)::INT FROM app_analytics_sessions WHERE last_seen_at >= NOW() - INTERVAL '2 minutes') AS online_now,
+          (SELECT COUNT(*)::INT FROM app_analytics_sessions WHERE last_seen_at >= NOW() - INTERVAL '5 minutes') AS active_5m,
+          (SELECT COUNT(*)::INT FROM app_analytics_events WHERE event_type = 'visit') AS total_visits,
+          (SELECT COUNT(*)::INT FROM app_analytics_events WHERE event_type = 'visit' AND created_at::DATE = CURRENT_DATE) AS visits_today,
+          (SELECT COUNT(*)::INT FROM app_analytics_events WHERE event_type = 'visit' AND created_at >= NOW() - INTERVAL '7 days') AS visits_7d,
+          (SELECT COUNT(DISTINCT customer_id)::INT FROM app_analytics_sessions) AS unique_customers_total,
+          (SELECT COUNT(DISTINCT customer_id)::INT FROM app_analytics_events WHERE created_at::DATE = CURRENT_DATE) AS unique_customers_today,
+          (SELECT COALESCE(MAX(peak_online), 0)::INT FROM app_analytics_peaks WHERE scope = 'global') AS peak_online_global,
+          (SELECT COALESCE(MAX(peak_online), 0)::INT FROM app_analytics_peaks WHERE scope = 'day:' || CURRENT_DATE::TEXT) AS peak_online_today,
+          (SELECT MAX(last_seen_at) FROM app_analytics_sessions) AS last_activity_at
+      )
+      SELECT * FROM metrics
+    `);
+
+    const recent = await pool.query(`
+      SELECT
+        s.customer_id,
+        u.customer_code,
+        u.nome,
+        u.cognome,
+        s.last_page,
+        s.last_event,
+        s.first_seen_at,
+        s.last_seen_at,
+        s.visits_count,
+        CASE WHEN s.last_seen_at >= NOW() - INTERVAL '2 minutes' THEN true ELSE false END AS online
+      FROM app_analytics_sessions s
+      LEFT JOIN users u ON u.id::TEXT = s.customer_id
+      ORDER BY s.last_seen_at DESC
+      LIMIT 20
+    `);
+
+    return res.json({
+      success: true,
+      summary: result.rows[0] || {},
+      recent_sessions: recent.rows || []
+    });
+  } catch (error) {
+    console.error("Errore analytics summary:", error);
+    return res.status(500).json({ success: false, error: "Errore caricamento statistiche WebApp" });
+  }
+});
+// PATCH_64_1_ANALYTICS_ADMIN_SUMMARY_END
 
 app.get("/api/system-status", async (req, res) => {
   const backupRoot = process.env.SA_BACKUP_ROOT || "/smart-assistance-backups";
@@ -2609,6 +2666,158 @@ async function getPublicWebAppGuides(category) {
 
   return result.rows;
 }
+
+
+
+// PATCH_64_1_ANALYTICS_BACKEND_START
+const saAnalyticsCrypto = require("crypto");
+let saAnalyticsTablesReady = false;
+
+async function ensureSaAnalyticsTables() {
+  if (saAnalyticsTablesReady) return;
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS app_analytics_sessions (
+      session_id TEXT PRIMARY KEY,
+      customer_id TEXT NOT NULL,
+      app_token_hash TEXT NOT NULL,
+      user_agent_hash TEXT,
+      first_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      last_page TEXT,
+      last_event TEXT,
+      visits_count INTEGER NOT NULL DEFAULT 0,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS app_analytics_events (
+      id BIGSERIAL PRIMARY KEY,
+      customer_id TEXT NOT NULL,
+      session_id TEXT NOT NULL,
+      event_type TEXT NOT NULL,
+      page TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS app_analytics_peaks (
+      scope TEXT PRIMARY KEY,
+      peak_date DATE,
+      peak_online INTEGER NOT NULL DEFAULT 0,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_app_analytics_sessions_last_seen ON app_analytics_sessions(last_seen_at)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_app_analytics_sessions_customer ON app_analytics_sessions(customer_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_app_analytics_events_created_at ON app_analytics_events(created_at)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_app_analytics_events_customer ON app_analytics_events(customer_id)`);
+  saAnalyticsTablesReady = true;
+}
+
+function saAnalyticsHash(value) {
+  return saAnalyticsCrypto.createHash("sha256").update(String(value || "")).digest("hex");
+}
+
+function getSaAnalyticsSessionId(req, token) {
+  const headerSession = String(req.get("x-sa-session-id") || "").trim();
+  if (headerSession && headerSession.length <= 120) {
+    return saAnalyticsHash("client-session|" + token + "|" + headerSession).slice(0, 64);
+  }
+  const forwardedFor = String(req.get("x-forwarded-for") || "").split(",")[0].trim();
+  const ipCandidate = forwardedFor || req.ip || req.socket?.remoteAddress || "unknown-ip";
+  const userAgent = String(req.get("user-agent") || "unknown-ua").slice(0, 500);
+  return saAnalyticsHash("derived-session|" + token + "|" + ipCandidate + "|" + userAgent).slice(0, 64);
+}
+
+function normalizeSaAnalyticsPage(value) {
+  const page = String(value || "app").trim().toLowerCase();
+  return page.replace(/[^a-z0-9_\-\/]/g, "").slice(0, 80) || "app";
+}
+
+async function recordSaAppAnalytics(req, options = {}) {
+  try {
+    const token = String(req.params?.token || "").trim();
+    if (!token) return;
+    await ensureSaAnalyticsTables();
+
+    const customerResult = await pool.query(
+      "SELECT id FROM users WHERE app_token = $1 LIMIT 1",
+      [token]
+    );
+    if (customerResult.rowCount === 0) return;
+
+    const customerId = String(customerResult.rows[0].id);
+    const sessionId = getSaAnalyticsSessionId(req, token);
+    const page = normalizeSaAnalyticsPage(options.page || req.body?.page || req.query?.page || "app");
+    const eventType = String(options.eventType || req.body?.event_type || "activity").slice(0, 40);
+    const userAgentHash = saAnalyticsHash(String(req.get("user-agent") || "").slice(0, 500)).slice(0, 64);
+    const tokenHash = saAnalyticsHash(token).slice(0, 64);
+    const visitIncrement = eventType === "visit" ? 1 : 0;
+
+    await pool.query(`
+      INSERT INTO app_analytics_sessions (
+        session_id, customer_id, app_token_hash, user_agent_hash, first_seen_at, last_seen_at,
+        last_page, last_event, visits_count, updated_at
+      ) VALUES ($1, $2, $3, $4, NOW(), NOW(), $5, $6, $7, NOW())
+      ON CONFLICT (session_id) DO UPDATE SET
+        customer_id = EXCLUDED.customer_id,
+        app_token_hash = EXCLUDED.app_token_hash,
+        user_agent_hash = EXCLUDED.user_agent_hash,
+        last_seen_at = NOW(),
+        last_page = EXCLUDED.last_page,
+        last_event = EXCLUDED.last_event,
+        visits_count = app_analytics_sessions.visits_count + EXCLUDED.visits_count,
+        updated_at = NOW()
+    `, [sessionId, customerId, tokenHash, userAgentHash, page, eventType, visitIncrement]);
+
+    await pool.query(`
+      INSERT INTO app_analytics_events (customer_id, session_id, event_type, page)
+      VALUES ($1, $2, $3, $4)
+    `, [customerId, sessionId, eventType, page]);
+
+    const onlineResult = await pool.query(`
+      SELECT COUNT(*)::INT AS online_now
+      FROM app_analytics_sessions
+      WHERE last_seen_at >= NOW() - INTERVAL '2 minutes'
+    `);
+    const onlineNow = Number(onlineResult.rows[0]?.online_now || 0);
+    const todayScope = "day:" + new Date().toISOString().slice(0, 10);
+
+    await pool.query(`
+      INSERT INTO app_analytics_peaks (scope, peak_date, peak_online, updated_at)
+      VALUES ('global', NULL, $1, NOW())
+      ON CONFLICT (scope) DO UPDATE SET
+        peak_online = GREATEST(app_analytics_peaks.peak_online, EXCLUDED.peak_online),
+        updated_at = CASE WHEN EXCLUDED.peak_online > app_analytics_peaks.peak_online THEN NOW() ELSE app_analytics_peaks.updated_at END
+    `, [onlineNow]);
+
+    await pool.query(`
+      INSERT INTO app_analytics_peaks (scope, peak_date, peak_online, updated_at)
+      VALUES ($1, CURRENT_DATE, $2, NOW())
+      ON CONFLICT (scope) DO UPDATE SET
+        peak_online = GREATEST(app_analytics_peaks.peak_online, EXCLUDED.peak_online),
+        updated_at = CASE WHEN EXCLUDED.peak_online > app_analytics_peaks.peak_online THEN NOW() ELSE app_analytics_peaks.updated_at END
+    `, [todayScope, onlineNow]);
+  } catch (error) {
+    console.error("Errore analytics WebApp:", error.message);
+  }
+}
+
+app.use("/api/app/:token", async (req, res, next) => {
+  const subPath = String(req.path || "");
+  if (req.method === "GET" && (subPath === "/" || subPath === "")) {
+    await recordSaAppAnalytics(req, { eventType: "visit", page: "home" });
+  } else if (req.method === "GET" && subPath === "/live-offers") {
+    await recordSaAppAnalytics(req, { eventType: "activity", page: "live" });
+  }
+  return next();
+});
+
+app.post("/api/app/:token/analytics/ping", async (req, res) => {
+  await recordSaAppAnalytics(req, { eventType: "heartbeat", page: req.body?.page || "app" });
+  return res.json({ success: true });
+});
+// PATCH_64_1_ANALYTICS_BACKEND_END
 
 app.get("/api/app/:token", async (req, res) => {
   try {
