@@ -2734,6 +2734,30 @@ function normalizeSaAnalyticsPage(value) {
   return page.replace(/[^a-z0-9_\-\/]/g, "").slice(0, 80) || "app";
 }
 
+// PATCH_64_3_ANALYTICS_PEAK_WHATSAPP_START
+async function notifySaAnalyticsPeakWhatsApp({ onlineNow, previousPeak }) {
+  const chatId = String(process.env.SA_ANALYTICS_PEAK_WHATSAPP_CHAT_ID || "").trim();
+  if (!chatId) return;
+  if (!Number.isFinite(onlineNow) || onlineNow <= previousPeak) return;
+
+  const timestamp = new Date().toLocaleString("it-IT", { timeZone: "Europe/Rome" });
+  const message = [
+    "Smart Assistance - Nuovo picco WebApp",
+    "",
+    "Utenti online contemporanei: " + onlineNow,
+    "Picco precedente: " + previousPeak,
+    "Data/Ora: " + timestamp,
+    "Fonte: WebApp clienti"
+  ].join("\n");
+
+  try {
+    await sendWahaTextMessage({ chatId, text: message });
+    console.log("Notifica WhatsApp nuovo picco WebApp inviata:", onlineNow);
+  } catch (error) {
+    console.error("Errore notifica WhatsApp picco WebApp:", error.message);
+  }
+}
+// PATCH_64_3_ANALYTICS_PEAK_WHATSAPP_END
 async function recordSaAppAnalytics(req, options = {}) {
   try {
     const token = String(req.params?.token || "").trim();
@@ -2783,6 +2807,13 @@ async function recordSaAppAnalytics(req, options = {}) {
     const onlineNow = Number(onlineResult.rows[0]?.online_now || 0);
     const todayScope = "day:" + new Date().toISOString().slice(0, 10);
 
+    // PATCH_64_3_ANALYTICS_PEAK_WHATSAPP_GLOBAL_CHECK
+    const previousGlobalPeakResult = await pool.query(
+      "SELECT COALESCE(MAX(peak_online), 0)::INT AS peak FROM app_analytics_peaks WHERE scope = $1",
+      ["global"]
+    );
+    const previousGlobalPeak = Number(previousGlobalPeakResult.rows[0]?.peak || 0);
+
     await pool.query(`
       INSERT INTO app_analytics_peaks (scope, peak_date, peak_online, updated_at)
       VALUES ('global', NULL, $1, NOW())
@@ -2790,6 +2821,13 @@ async function recordSaAppAnalytics(req, options = {}) {
         peak_online = GREATEST(app_analytics_peaks.peak_online, EXCLUDED.peak_online),
         updated_at = CASE WHEN EXCLUDED.peak_online > app_analytics_peaks.peak_online THEN NOW() ELSE app_analytics_peaks.updated_at END
     `, [onlineNow]);
+
+    if (onlineNow > previousGlobalPeak) {
+      await notifySaAnalyticsPeakWhatsApp({
+        onlineNow,
+        previousPeak: previousGlobalPeak
+      });
+    }
 
     await pool.query(`
       INSERT INTO app_analytics_peaks (scope, peak_date, peak_online, updated_at)
