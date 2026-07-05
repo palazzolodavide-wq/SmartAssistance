@@ -152,6 +152,22 @@ export default function Home() {
   const [liveMessage, setLiveMessage] = useState("");
   const [liveMonitor, setLiveMonitor] = useState(null);
   const [systemStatus, setSystemStatus] = useState(null);
+  // PATCH_64_2_SAFE_WEBAPP_ANALYTICS_ADMIN_STATE
+  const [webAppAnalytics, setWebAppAnalytics] = useState({
+    summary: {
+      online_now: 0,
+      active_5m: 0,
+      total_visits: 0,
+      visits_today: 0,
+      visits_7d: 0,
+      unique_customers_total: 0,
+      unique_customers_today: 0,
+      peak_online_global: 0,
+      peak_online_today: 0,
+      last_activity_at: null,
+    },
+    recent_sessions: [],
+  });
 
   const [clickStats, setClickStats] = useState({
     summary: {
@@ -307,6 +323,22 @@ export default function Home() {
       } catch (systemErr) {
         console.error("Errore stato sistema", systemErr);
         setSystemStatus(null);
+      }
+
+      // PATCH_64_2_SAFE_WEBAPP_ANALYTICS_ADMIN_LOAD
+      try {
+        const analyticsRes = await apiFetch(`${API_URL}/api/analytics/summary`);
+        const analyticsData = await analyticsRes.json();
+
+        if (analyticsData.success) {
+          setWebAppAnalytics({
+            summary: analyticsData.summary || {},
+            recent_sessions: Array.isArray(analyticsData.recent_sessions) ? analyticsData.recent_sessions : [],
+          });
+        }
+      } catch (analyticsErr) {
+        console.error("Errore statistiche WebApp", analyticsErr);
+        setWebAppAnalytics({ summary: {}, recent_sessions: [] });
       }
     } catch (err) {
       alert(err.message);
@@ -3082,6 +3114,63 @@ export default function Home() {
               <KpiCard label="Dispositivi" value={devices.length} />
               <KpiCard label="Offerte" value={offers.length} />
               <KpiCard label="Click 24h" value={clickStats.summary?.clicks_24h || 0} />
+            </section>
+
+            {/* PATCH_64_2_SAFE_WEBAPP_ANALYTICS_ADMIN_UI */}
+            <section className="panel" style={{ marginTop: "18px", marginBottom: "18px" }}>
+              <div className="panel-header">
+                <div>
+                  <h2 className="panel-title">Statistiche WebApp cliente</h2>
+                  <div className="panel-subtitle">Utenti online, visite e picchi raccolti dalle aperture della WebApp cliente.</div>
+                </div>
+                <button type="button" className="ghost-button" onClick={loadData}>Aggiorna</button>
+              </div>
+
+              <section className="kpi-grid" style={{ marginTop: "16px" }}>
+                <KpiCard label="Online ora" value={formatInteger(webAppAnalytics.summary?.online_now)} />
+                <KpiCard label="Attivi 5 min" value={formatInteger(webAppAnalytics.summary?.active_5m)} />
+                <KpiCard label="Visite totali" value={formatInteger(webAppAnalytics.summary?.total_visits)} />
+                <KpiCard label="Visite oggi" value={formatInteger(webAppAnalytics.summary?.visits_today)} />
+                <KpiCard label="Visite 7 giorni" value={formatInteger(webAppAnalytics.summary?.visits_7d)} />
+                <KpiCard label="Utenti unici" value={formatInteger(webAppAnalytics.summary?.unique_customers_total)} />
+                <KpiCard label="Picco globale" value={formatInteger(webAppAnalytics.summary?.peak_online_global)} />
+                <KpiCard label="Picco oggi" value={formatInteger(webAppAnalytics.summary?.peak_online_today)} />
+              </section>
+
+              <div className="panel-subtitle" style={{ marginTop: "10px" }}>
+                Ultima attivita WebApp: {formatSystemDate(webAppAnalytics.summary?.last_activity_at)}
+              </div>
+
+              <div className="table-wrap" style={{ marginTop: "16px" }}>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Stato</th>
+                      <th>Cliente</th>
+                      <th>Pagina</th>
+                      <th>Evento</th>
+                      <th>Visite sessione</th>
+                      <th>Ultima attivita</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(webAppAnalytics.recent_sessions || []).length === 0 ? (
+                      <tr><td colSpan="6">Nessuna sessione WebApp registrata.</td></tr>
+                    ) : (
+                      (webAppAnalytics.recent_sessions || []).map((session, index) => (
+                        <tr key={(session.session_id || session.customer_id || "session") + "-" + index}>
+                          <td><span className={session.online ? "badge badge-green" : "badge badge-blue"}>{session.online ? "Online" : "Offline"}</span></td>
+                          <td>{String((session.customer_code || "") + " " + (session.nome || "") + " " + (session.cognome || "")).trim() || "Cliente"}</td>
+                          <td>{session.last_page || "-"}</td>
+                          <td>{session.last_event || "-"}</td>
+                          <td>{formatInteger(session.visits_count)}</td>
+                          <td>{formatSystemDate(session.last_seen_at)}</td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </section>
 
             <section className="dashboard-grid">
