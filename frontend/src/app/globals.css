@@ -1,3 +1,26 @@
+/* PATCH_63_2_NO_WHITE_FLASH_GLOBAL_BG */
+:root {
+  background: #0b1220;
+  color-scheme: dark;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+  background: #0b1220 !important;
+}
+
+body {
+  overscroll-behavior-y: none;
+}
+
+@media (display-mode: standalone) {
+  html,
+  body {
+    background: #0b1220 !important;
+  }
+}
 html,
 body {
   margin: 0;

@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
@@ -282,6 +282,16 @@ export default function CustomerPage() {
     }
 
     themeColor.content = "#0f172a";
+    // PATCH_63_WEBAPP_MOBILE_SAFE_VIEWPORT
+    let viewportMeta = document.querySelector('meta[name="viewport"]');
+
+    if (!viewportMeta) {
+      viewportMeta = document.createElement("meta");
+      viewportMeta.name = "viewport";
+      document.head.appendChild(viewportMeta);
+    }
+
+    viewportMeta.content = "width=device-width, initial-scale=1, viewport-fit=cover";
 
     let appleIcon = document.querySelector('link[rel="apple-touch-icon"]');
 
@@ -1469,6 +1479,139 @@ export default function CustomerPage() {
   return (
     <main className="sa-page" style={styles.page}>
       <style>{`
+        /* PATCH_63_1_WEBAPP_NO_WHITE_FRAME */
+        html,
+        body {
+          margin: 0 !important;
+          padding: 0 !important;
+          background: #0f172a !important;
+          width: 100% !important;
+          min-height: 100% !important;
+          overflow-x: hidden !important;
+        }
+
+        body {
+          overscroll-behavior-x: none;
+          -webkit-tap-highlight-color: transparent;
+        }
+
+        .sa-page {
+          width: 100% !important;
+          max-width: none !important;
+          margin: 0 !important;
+          min-height: 100vh !important;
+          min-height: 100dvh !important;
+          background: #0f172a !important;
+        }
+        /* PATCH_63_WEBAPP_MOBILE_SAFE */
+        .sa-page,
+        .sa-page * {
+          box-sizing: border-box;
+        }
+
+        .sa-page {
+          overflow-x: hidden;
+          -webkit-text-size-adjust: 100%;
+          touch-action: manipulation;
+        }
+
+        .sa-shell {
+          max-width: 100%;
+        }
+
+        .sa-filter-bar-mobile-helper {
+          display: none;
+        }
+
+        @media (max-width: 520px) {
+          .sa-page {
+            padding: 12px !important;
+            padding-bottom: calc(112px + env(safe-area-inset-bottom, 0px)) !important;
+          }
+
+          .sa-app-card,
+          .sa-offer-card {
+            border-radius: 18px !important;
+            padding: 14px !important;
+          }
+
+          .sa-home-hero {
+            border-radius: 22px !important;
+            padding: 18px !important;
+          }
+
+          .sa-home-hero h1,
+          .sa-page h1 {
+            font-size: 24px !important;
+            line-height: 1.15 !important;
+          }
+
+          .sa-page h2 {
+            font-size: 20px !important;
+            line-height: 1.2 !important;
+          }
+
+          .sa-offer-card img {
+            height: 145px !important;
+            margin-bottom: 12px !important;
+          }
+
+          .sa-offer-card h3 {
+            font-size: 16px !important;
+            line-height: 1.28 !important;
+          }
+
+          .sa-offer-card > div:last-child {
+            gap: 8px !important;
+          }
+
+          .sa-offer-card > div:last-child button {
+            min-height: 48px !important;
+          }
+
+          .sa-nav {
+            width: calc(100% - 16px) !important;
+            bottom: calc(8px + env(safe-area-inset-bottom, 0px)) !important;
+            padding: 8px !important;
+            border-radius: 20px !important;
+          }
+
+          .sa-nav button {
+            min-height: 54px !important;
+            padding: 7px 4px !important;
+            font-size: 10px !important;
+          }
+
+          .sa-nav button div {
+            font-size: 17px !important;
+            margin-bottom: 1px !important;
+          }
+        }
+
+        @media (max-width: 390px) {
+          .sa-page {
+            padding: 10px !important;
+            padding-bottom: calc(108px + env(safe-area-inset-bottom, 0px)) !important;
+          }
+
+          .sa-nav {
+            width: calc(100% - 12px) !important;
+            padding: 7px !important;
+          }
+
+          .sa-nav button {
+            min-height: 50px !important;
+            font-size: 9.5px !important;
+          }
+
+          .sa-nav button div {
+            font-size: 16px !important;
+          }
+
+          .sa-offer-card img {
+            height: 132px !important;
+          }
+        }
         .sa-shell {
           width: 100%;
         }
@@ -1513,7 +1656,140 @@ export default function CustomerPage() {
             padding: 28px 32px 108px !important;
           }
 
-          .sa-shell {
+          /* PATCH_63_1_WEBAPP_NO_WHITE_FRAME */
+        html,
+        body {
+          margin: 0 !important;
+          padding: 0 !important;
+          background: #0f172a !important;
+          width: 100% !important;
+          min-height: 100% !important;
+          overflow-x: hidden !important;
+        }
+
+        body {
+          overscroll-behavior-x: none;
+          -webkit-tap-highlight-color: transparent;
+        }
+
+        .sa-page {
+          width: 100% !important;
+          max-width: none !important;
+          margin: 0 !important;
+          min-height: 100vh !important;
+          min-height: 100dvh !important;
+          background: #0f172a !important;
+        }
+        /* PATCH_63_WEBAPP_MOBILE_SAFE */
+        .sa-page,
+        .sa-page * {
+          box-sizing: border-box;
+        }
+
+        .sa-page {
+          overflow-x: hidden;
+          -webkit-text-size-adjust: 100%;
+          touch-action: manipulation;
+        }
+
+        .sa-shell {
+          max-width: 100%;
+        }
+
+        .sa-filter-bar-mobile-helper {
+          display: none;
+        }
+
+        @media (max-width: 520px) {
+          .sa-page {
+            padding: 12px !important;
+            padding-bottom: calc(112px + env(safe-area-inset-bottom, 0px)) !important;
+          }
+
+          .sa-app-card,
+          .sa-offer-card {
+            border-radius: 18px !important;
+            padding: 14px !important;
+          }
+
+          .sa-home-hero {
+            border-radius: 22px !important;
+            padding: 18px !important;
+          }
+
+          .sa-home-hero h1,
+          .sa-page h1 {
+            font-size: 24px !important;
+            line-height: 1.15 !important;
+          }
+
+          .sa-page h2 {
+            font-size: 20px !important;
+            line-height: 1.2 !important;
+          }
+
+          .sa-offer-card img {
+            height: 145px !important;
+            margin-bottom: 12px !important;
+          }
+
+          .sa-offer-card h3 {
+            font-size: 16px !important;
+            line-height: 1.28 !important;
+          }
+
+          .sa-offer-card > div:last-child {
+            gap: 8px !important;
+          }
+
+          .sa-offer-card > div:last-child button {
+            min-height: 48px !important;
+          }
+
+          .sa-nav {
+            width: calc(100% - 16px) !important;
+            bottom: calc(8px + env(safe-area-inset-bottom, 0px)) !important;
+            padding: 8px !important;
+            border-radius: 20px !important;
+          }
+
+          .sa-nav button {
+            min-height: 54px !important;
+            padding: 7px 4px !important;
+            font-size: 10px !important;
+          }
+
+          .sa-nav button div {
+            font-size: 17px !important;
+            margin-bottom: 1px !important;
+          }
+        }
+
+        @media (max-width: 390px) {
+          .sa-page {
+            padding: 10px !important;
+            padding-bottom: calc(108px + env(safe-area-inset-bottom, 0px)) !important;
+          }
+
+          .sa-nav {
+            width: calc(100% - 12px) !important;
+            padding: 7px !important;
+          }
+
+          .sa-nav button {
+            min-height: 50px !important;
+            font-size: 9.5px !important;
+          }
+
+          .sa-nav button div {
+            font-size: 16px !important;
+          }
+
+          .sa-offer-card img {
+            height: 132px !important;
+          }
+        }
+        .sa-shell {
             max-width: 1180px !important;
           }
 
@@ -2237,3 +2513,5 @@ export default function CustomerPage() {
     </main>
   );
 }
+
+
