@@ -104,13 +104,13 @@ const EMPTY_GUIDE_FORM = {
 };
 
 const NAV_ITEMS = [
-  { id: "dashboard", label: "Dashboard", icon: "ðŸ“Š" },
-  { id: "customers", label: "Clienti & Device", icon: "ðŸ‘¥" },
-  { id: "offers", label: "Offerte", icon: "ðŸŽ" },
-  { id: "guides", label: "Guide WebApp", icon: "ðŸ“š" },
-  { id: "live", label: "Offerte Live", icon: "ðŸ”¥" },
-  { id: "system", label: "Sistema", icon: "🛡️" },
-  { id: "stats", label: "Statistiche", icon: "ðŸ“ˆ" },
+  { id: "dashboard", label: "Dashboard" },
+  { id: "customers", label: "Clienti & Device" },
+  { id: "offers", label: "Offerte" },
+  { id: "guides", label: "Guide WebApp" },
+  { id: "live", label: "Offerte Live" },
+  { id: "system", label: "Sistema" },
+  { id: "stats", label: "Statistiche" },
 ];
 
 export default function Home() {
@@ -3002,7 +3002,6 @@ export default function Home() {
               className={`nav-button ${activeSection === item.id ? "active" : ""}`}
               onClick={() => setActiveSection(item.id)}
             >
-              <span>{item.icon}</span>
               {item.label}
             </button>
           ))}
@@ -5253,7 +5252,6 @@ export default function Home() {
               className={activeSection === item.id ? "active" : ""}
               onClick={() => setActiveSection(item.id)}
             >
-              <span>{item.icon}</span>
               {item.label}
             </button>
           ))}
