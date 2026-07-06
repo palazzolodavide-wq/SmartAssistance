@@ -32,6 +32,8 @@ $summary = [ordered]@{
     Frontend = "NON TESTATO"
     Pubblico = "NON TESTATO"
     PostgresDump = "NON TESTATO"
+    # PATCH_68A_BACKUP_RESTORE_CHECK_SUMMARY
+    BackupRestoreCheck = "NON TESTATO"
     LiveOffers24h = "NON TESTATO"
     LiveOffersLast = "NON TESTATO"
     # PATCH_67A_LIVE_OFFERS_QUALITY_SUMMARY
@@ -324,6 +326,143 @@ function Create-ZipFromDirectory {
     [System.IO.Compression.ZipFile]::CreateFromDirectory($SourceDirectory, $DestinationZip, [System.IO.Compression.CompressionLevel]::Optimal, $false)
 }
 
+# PATCH_68A_BACKUP_RESTORE_CHECK_FUNCTION_START
+function Find-SaZipEntry {
+    param(
+        [array]$Entries,
+        [string]$Pattern
+    )
+
+    foreach ($entry in $Entries) {
+        if ($entry.NormalizedName -match $Pattern) {
+            return $entry
+        }
+    }
+
+    return $null
+}
+
+function Test-SaBackupZipRestoreStructure {
+    param(
+        [string]$ZipPath,
+        [bool]$RequireBackendEnv = $false,
+        [bool]$RequireFrontendEnv = $false,
+        [bool]$RequireTelegramEnv = $false,
+        [bool]$RequireTelegramSession = $false
+    )
+
+    $result = [ordered]@{
+        Ok = $false
+        Text = "NON TESTATO"
+        EntryCount = 0
+        DumpBytes = 0
+        SqlBytes = 0
+        Missing = @()
+        Error = ""
+    }
+
+    try {
+        if (-not (Test-Path -LiteralPath $ZipPath)) {
+            $result.Text = "ERRORE - ZIP non trovato"
+            $result.Error = "ZIP non trovato: $ZipPath"
+            return [pscustomobject]$result
+        }
+
+        Add-Type -AssemblyName System.IO.Compression.FileSystem
+
+        $zipInfo = Get-Item -LiteralPath $ZipPath
+        if ($zipInfo.Length -lt 1MB) {
+            $result.Missing += "ZIP troppo piccolo (<1MB)"
+        }
+
+        $zip = [System.IO.Compression.ZipFile]::OpenRead($ZipPath)
+
+        try {
+            $entries = @(
+                $zip.Entries | ForEach-Object {
+                    [pscustomobject]@{
+                        FullName = $_.FullName
+                        NormalizedName = (($_.FullName -replace '/', '\').ToLowerInvariant())
+                        Length = $_.Length
+                        CompressedLength = $_.CompressedLength
+                    }
+                }
+            )
+
+            $result.EntryCount = $entries.Count
+
+            $required = New-Object System.Collections.Generic.List[object]
+
+            [void]$required.Add([pscustomobject]@{ Name = "db/smartassistance.dump"; Pattern = "^db\\smartassistance\.dump$"; MinBytes = 1024 })
+            [void]$required.Add([pscustomobject]@{ Name = "db/smartassistance.sql"; Pattern = "^db\\smartassistance\.sql$"; MinBytes = 1024 })
+            [void]$required.Add([pscustomobject]@{ Name = "db/globals.sql"; Pattern = "^db\\globals\.sql$"; MinBytes = 1 })
+            [void]$required.Add([pscustomobject]@{ Name = "db/db-info.txt"; Pattern = "^db\\db-info\.txt$"; MinBytes = 1 })
+            [void]$required.Add([pscustomobject]@{ Name = "key-files/docker-compose.yml"; Pattern = "^key-files\\docker-compose\.ya?ml$"; MinBytes = 1 })
+            [void]$required.Add([pscustomobject]@{ Name = "key-files/docker-compose.telegram-live.yml"; Pattern = "^key-files\\docker-compose\.telegram-live\.ya?ml$"; MinBytes = 1 })
+            [void]$required.Add([pscustomobject]@{ Name = "key-files/backend-package.json"; Pattern = "^key-files\\backend-package\.json$"; MinBytes = 1 })
+            [void]$required.Add([pscustomobject]@{ Name = "key-files/frontend-package.json"; Pattern = "^key-files\\frontend-package\.json$"; MinBytes = 1 })
+            [void]$required.Add([pscustomobject]@{ Name = "project-files/scripts/SmartAssistance-DailyBackupCheck.ps1"; Pattern = "^project-files\\scripts\\smartassistance-dailybackupcheck\.ps1$"; MinBytes = 1 })
+            [void]$required.Add([pscustomobject]@{ Name = "project-files/database/*.sql"; Pattern = "^project-files\\database\\.+\.sql$"; MinBytes = 1 })
+            [void]$required.Add([pscustomobject]@{ Name = "state/docker-compose-config.txt"; Pattern = "^state\\docker-compose-config\.txt$"; MinBytes = 1 })
+            [void]$required.Add([pscustomobject]@{ Name = "MANIFEST.txt"; Pattern = "^manifest\.txt$"; MinBytes = 1 })
+
+            if ($RequireBackendEnv) {
+                [void]$required.Add([pscustomobject]@{ Name = "key-files/backend.env"; Pattern = "^key-files\\backend\.env$"; MinBytes = 1 })
+            }
+
+            if ($RequireFrontendEnv) {
+                [void]$required.Add([pscustomobject]@{ Name = "key-files/frontend env"; Pattern = "^key-files\\frontend\.env(\.local)?$"; MinBytes = 1 })
+            }
+
+            if ($RequireTelegramEnv) {
+                [void]$required.Add([pscustomobject]@{ Name = "key-files/telegram-live.env"; Pattern = "^key-files\\telegram-live\.env$"; MinBytes = 1 })
+            }
+
+            if ($RequireTelegramSession) {
+                [void]$required.Add([pscustomobject]@{ Name = "key-files/telegram-live-session/telegram.session"; Pattern = "^key-files\\telegram-live-session\\telegram\.session$"; MinBytes = 1 })
+            }
+
+            foreach ($item in $required) {
+                $found = Find-SaZipEntry -Entries $entries -Pattern $item.Pattern
+                if ($null -eq $found) {
+                    $result.Missing += $item.Name
+                } elseif ($found.Length -lt $item.MinBytes) {
+                    $result.Missing += "$($item.Name) vuoto"
+                }
+            }
+
+            $dumpEntry = Find-SaZipEntry -Entries $entries -Pattern "^db\\smartassistance\.dump$"
+            $sqlEntry = Find-SaZipEntry -Entries $entries -Pattern "^db\\smartassistance\.sql$"
+
+            if ($null -ne $dumpEntry) { $result.DumpBytes = [int64]$dumpEntry.Length }
+            if ($null -ne $sqlEntry) { $result.SqlBytes = [int64]$sqlEntry.Length }
+
+            if ($result.EntryCount -lt 20) {
+                $result.Missing += "numero file ZIP anomalo (<20)"
+            }
+
+            $dumpMb = [math]::Round(($result.DumpBytes / 1MB), 2)
+            $sqlMb = [math]::Round(($result.SqlBytes / 1MB), 2)
+
+            if ($result.Missing.Count -eq 0) {
+                $result.Ok = $true
+                $result.Text = "OK - ZIP ripristinabile strutturalmente / file: $($result.EntryCount) / dump: ${dumpMb} MB / SQL: ${sqlMb} MB"
+            } else {
+                $result.Ok = $false
+                $result.Text = "ATTENZIONE - ZIP leggibile ma mancano: $($result.Missing -join ', ')"
+            }
+        } finally {
+            if ($zip) { $zip.Dispose() }
+        }
+    } catch {
+        $result.Ok = $false
+        $result.Text = "ERRORE - verifica ZIP non riuscita"
+        $result.Error = $_.Exception.Message
+    }
+
+    return [pscustomobject]$result
+}
+# PATCH_68A_BACKUP_RESTORE_CHECK_FUNCTION_END
 function Send-WhatsAppNotification {
     param(
         [object]$Config,
@@ -671,6 +810,10 @@ CROSS JOIN channels ch;
     Copy-IfExists -Source (Join-Path $ProjectRoot "scripts") -Destination (Join-Path $projectFilesDir "scripts") | Out-Null
     Copy-IfExists -Source (Join-Path $ProjectRoot "telegram-live\session") -Destination (Join-Path $keyFilesDir "telegram-live-session") | Out-Null
     Copy-IfExists -Source (Join-Path $ProjectRoot "telegram-live\.env") -Destination (Join-Path $keyFilesDir "telegram-live.env") | Out-Null
+    # PATCH_68A_BACKUP_RESTORE_CHECK_COPY_ENV
+    Copy-IfExists -Source (Join-Path $ProjectRoot "backend\.env") -Destination (Join-Path $keyFilesDir "backend.env") | Out-Null
+    Copy-IfExists -Source (Join-Path $ProjectRoot "frontend\.env") -Destination (Join-Path $keyFilesDir "frontend.env") | Out-Null
+    Copy-IfExists -Source (Join-Path $ProjectRoot "frontend\.env.local") -Destination (Join-Path $keyFilesDir "frontend.env.local") | Out-Null
     Copy-IfExists -Source (Join-Path $ProjectRoot "backend\package.json") -Destination (Join-Path $keyFilesDir "backend-package.json") | Out-Null
     Copy-IfExists -Source (Join-Path $ProjectRoot "frontend\package.json") -Destination (Join-Path $keyFilesDir "frontend-package.json") | Out-Null
 
@@ -689,6 +832,8 @@ CROSS JOIN channels ch;
     $manifest += "- db/smartassistance.dump"
     $manifest += "- db/smartassistance.sql"
     $manifest += "- key-files/"
+    # PATCH_68A_BACKUP_RESTORE_CHECK_MANIFEST
+    $manifest += "- key-files/backend.env, frontend.env, frontend.env.local se presenti"
     $manifest += "- project-files/caddy,database,scripts"
     $manifest += "- state/"
     $manifest += "- logs/"
@@ -703,6 +848,46 @@ CROSS JOIN channels ch;
         $zipLen = (Get-Item -LiteralPath $backupZip).Length
         if ($zipLen -le 0) { Add-ErrorMessage "ZIP backup creato ma vuoto" }
         $summary.Backup = "OK - $(Split-Path $backupZip -Leaf) - $([math]::Round($zipLen / 1MB, 2)) MB"
+
+        # PATCH_68A_BACKUP_RESTORE_CHECK_RUN_START
+        $requireBackendEnv = Test-Path -LiteralPath (Join-Path $ProjectRoot "backend\.env")
+        $requireFrontendEnv = (Test-Path -LiteralPath (Join-Path $ProjectRoot "frontend\.env")) -or (Test-Path -LiteralPath (Join-Path $ProjectRoot "frontend\.env.local"))
+        $requireTelegramEnv = Test-Path -LiteralPath (Join-Path $ProjectRoot "telegram-live\.env")
+        $requireTelegramSession = Test-Path -LiteralPath (Join-Path $ProjectRoot "telegram-live\session\telegram.session")
+
+        $restoreCheck = Test-SaBackupZipRestoreStructure `
+            -ZipPath $backupZip `
+            -RequireBackendEnv $requireBackendEnv `
+            -RequireFrontendEnv $requireFrontendEnv `
+            -RequireTelegramEnv $requireTelegramEnv `
+            -RequireTelegramSession $requireTelegramSession
+
+        $summary.BackupRestoreCheck = $restoreCheck.Text
+
+        $restoreCheckPath = Join-Path $stateDir "backup_restore_check.json"
+        Save-TextFile -Path $restoreCheckPath -Content (($restoreCheck | ConvertTo-Json -Depth 5))
+
+        try {
+            Add-Type -AssemblyName System.IO.Compression.FileSystem
+            $zipUpdate = [System.IO.Compression.ZipFile]::Open($backupZip, [System.IO.Compression.ZipArchiveMode]::Update)
+            try {
+                $existingEntry = $zipUpdate.GetEntry("state/backup_restore_check.json")
+                if ($existingEntry) { $existingEntry.Delete() }
+                [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zipUpdate, $restoreCheckPath, "state/backup_restore_check.json") | Out-Null
+            } finally {
+                if ($zipUpdate) { $zipUpdate.Dispose() }
+            }
+
+            $zipLenFinal = (Get-Item -LiteralPath $backupZip).Length
+            $summary.Backup = "OK - $(Split-Path $backupZip -Leaf) - $([math]::Round($zipLenFinal / 1MB, 2)) MB"
+        } catch {
+            Add-WarningMessage "Backup restore check salvato ma non inserito nello ZIP: $($_.Exception.Message)"
+        }
+
+        if (-not $restoreCheck.Ok) {
+            Add-WarningMessage "Backup restore check: $($restoreCheck.Text)"
+        }
+        # PATCH_68A_BACKUP_RESTORE_CHECK_RUN_END
     }
 
 } catch {
@@ -808,6 +993,8 @@ $reportLines = New-Object System.Collections.Generic.List[string]
 [void]$reportLines.Add("Smart Assistance - Check giornaliero: $status")
 [void]$reportLines.Add("Data: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')")
 [void]$reportLines.Add("Backup: $($summary.Backup)")
+# PATCH_68A_BACKUP_RESTORE_CHECK_REPORT
+[void]$reportLines.Add("Verifica backup: $($summary.BackupRestoreCheck)")
 [void]$reportLines.Add("Backend: $($summary.Backend)")
 [void]$reportLines.Add("Frontend: $($summary.Frontend)")
 [void]$reportLines.Add("Pubblico: $($summary.Pubblico)")
@@ -837,6 +1024,8 @@ try {
         exitCode = $exitCode
         date = (Get-Date).ToString("s")
         backup = $summary.Backup
+        # PATCH_68A_BACKUP_RESTORE_CHECK_JSON
+        backupRestoreCheck = $summary.BackupRestoreCheck
         backend = $summary.Backend
         frontend = $summary.Frontend
         public = $summary.Pubblico
