@@ -214,6 +214,32 @@ export default function Home() {
     loadData();
   }, []);
 
+  // PATCH_64_5_ADMIN_ANALYTICS_AUTO_REFRESH_EFFECT
+  useEffect(() => {
+    if (!authReady || activeSection !== "dashboard" || loading) {
+      return;
+    }
+
+    let cancelled = false;
+
+    function refreshAnalytics() {
+      if (cancelled) {
+        return;
+      }
+
+      loadWebAppAnalytics({ silent: true });
+    }
+
+    refreshAnalytics();
+
+    const intervalId = window.setInterval(refreshAnalytics, 30000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [authReady, activeSection, loading]);
+
   function getAuthToken() {
     if (typeof window === "undefined") {
       return "";
@@ -252,6 +278,25 @@ export default function Home() {
   function logout() {
     localStorage.removeItem("token");
     window.location.href = "/login";
+  }
+
+  // PATCH_64_5_ADMIN_ANALYTICS_AUTO_REFRESH_LOADER
+  async function loadWebAppAnalytics(options = {}) {
+    try {
+      const analyticsRes = await apiFetch(`${API_URL}/api/analytics/summary`);
+      const analyticsData = await analyticsRes.json();
+
+      if (analyticsData.success) {
+        setWebAppAnalytics({
+          summary: analyticsData.summary || {},
+          recent_sessions: Array.isArray(analyticsData.recent_sessions) ? analyticsData.recent_sessions : [],
+        });
+      }
+    } catch (analyticsErr) {
+      if (!options.silent) {
+        console.error("Errore statistiche WebApp", analyticsErr);
+      }
+    }
   }
 
   async function loadData() {
@@ -326,20 +371,7 @@ export default function Home() {
       }
 
       // PATCH_64_2_SAFE_WEBAPP_ANALYTICS_ADMIN_LOAD
-      try {
-        const analyticsRes = await apiFetch(`${API_URL}/api/analytics/summary`);
-        const analyticsData = await analyticsRes.json();
-
-        if (analyticsData.success) {
-          setWebAppAnalytics({
-            summary: analyticsData.summary || {},
-            recent_sessions: Array.isArray(analyticsData.recent_sessions) ? analyticsData.recent_sessions : [],
-          });
-        }
-      } catch (analyticsErr) {
-        console.error("Errore statistiche WebApp", analyticsErr);
-        setWebAppAnalytics({ summary: {}, recent_sessions: [] });
-      }
+      await loadWebAppAnalytics({ silent: false });
     } catch (err) {
       alert(err.message);
     } finally {
