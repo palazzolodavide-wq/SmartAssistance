@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import React, { useEffect, useMemo, useState } from "react";
 
@@ -4859,7 +4859,7 @@ export default function Home() {
                 <div className="panel-header">
                   <div>
                     <h2 className="panel-title">Servizi principali</h2>
-                    <div className="panel-subtitle">Stato letto dal backend e dall'ultimo report giornaliero Patch 58.</div>
+                    <div className="panel-subtitle">Stato letto dal backend e dall'ultimo report giornaliero automatico.</div>
                   </div>
                   <span className={getSystemBadgeClass(systemStatus?.overall_status)}>{getSystemStatusLabel(systemStatus?.overall_status)}</span>
                 </div>
@@ -4877,19 +4877,35 @@ export default function Home() {
               </div>
 
               <div className="panel">
+                {/* PATCH_69A_SYSTEM_REPORT_EXTENDED_FRONTEND_PANEL */}
                 <div className="panel-header">
                   <div>
                     <h2 className="panel-title">Ultimo check giornaliero</h2>
-                    <div className="panel-subtitle">Report generato dallo script backup/check automatico.</div>
+                    <div className="panel-subtitle">Report automatico con backup, ripristinabilita ZIP, Offerte Live e Analytics WebApp.</div>
                   </div>
+                  {systemStatus?.report?.available && (
+                    <span className={getSystemBadgeClass(systemStatus.report.normalized_status || systemStatus?.overall_status)}>
+                      {systemStatus.report.status || getSystemStatusLabel(systemStatus.report.normalized_status || systemStatus?.overall_status)}
+                    </span>
+                  )}
                 </div>
                 {!systemStatus?.report?.available ? (
                   <div className="quick-item">Report non disponibile.</div>
                 ) : (
                   <div className="quick-list">
-                    <div className="quick-item"><div><div className="row-title">Data</div><div className="muted-text">{systemStatus.report.data || "-"}</div></div></div>
-                    <div className="quick-item"><div><div className="row-title">Backup</div><div className="muted-text">{systemStatus.report.backup || "-"}</div></div></div>
-                    <div className="quick-item"><div><div className="row-title">Offerte Live</div><div className="muted-text">{systemStatus.report.live || "-"}</div></div></div>
+                    <div className="quick-item"><div><div className="row-title">Stato report</div><div className="muted-text">{systemStatus.report.status_line || "-"}</div></div></div>
+                    <div className="quick-item"><div><div className="row-title">Data</div><div className="muted-text">{formatSystemDate(systemStatus.report.data)}</div></div></div>
+                    <div className="quick-item"><div><div className="row-title">Backup ZIP</div><div className="muted-text">{systemStatus.report.backup || "-"}</div></div></div>
+                    <div className="quick-item"><div><div className="row-title">Verifica backup</div><div className="muted-text">{systemStatus.report.backup_restore_check || "-"}</div></div></div>
+                    <div className="quick-item"><div><div className="row-title">Backend</div><div className="muted-text">{systemStatus.report.backend || "-"}</div></div></div>
+                    <div className="quick-item"><div><div className="row-title">Frontend</div><div className="muted-text">{systemStatus.report.frontend || "-"}</div></div></div>
+                    <div className="quick-item"><div><div className="row-title">Dominio pubblico</div><div className="muted-text">{systemStatus.report.public || "-"}</div></div></div>
+                    <div className="quick-item"><div><div className="row-title">PostgreSQL dump</div><div className="muted-text">{systemStatus.report.postgres_dump || "-"}</div></div></div>
+                    <div className="quick-item"><div><div className="row-title">Offerte Live</div><div className="muted-text">{systemStatus.report.live_quality || systemStatus.report.live || "-"}</div></div></div>
+                    <div className="quick-item"><div><div className="row-title">Ultima offerta Live</div><div className="muted-text">{systemStatus.report.live_last || "-"}</div></div></div>
+                    <div className="quick-item"><div><div className="row-title">Analytics WebApp</div><div className="muted-text">{systemStatus.report.analytics || "-"}</div></div></div>
+                    <div className="quick-item"><div><div className="row-title">Durata</div><div className="muted-text">{systemStatus.report.duration || "-"}</div></div></div>
+                    <div className="quick-item"><div><div className="row-title">Avvisi/Errori report</div><div className="muted-text">{(systemStatus.report.warnings || []).length} avvisi / {(systemStatus.report.errors || []).length} errori</div></div></div>
                     <div className="quick-item"><div><div className="row-title">Notifica WhatsApp</div><div className="muted-text">{systemStatus.notification?.available ? `WhatsApp: ${systemStatus.notification.whatsapp || "-"} / Email: ${systemStatus.notification.email || "-"}` : "Non disponibile"}</div></div></div>
                   </div>
                 )}
@@ -4950,21 +4966,24 @@ export default function Home() {
               <div className="panel-header">
                 <div>
                   <h2 className="panel-title">Storico backup e check</h2>
-                  <div className="panel-subtitle">Ultime esecuzioni dello script giornaliero Patch 58.</div>
+                  <div className="panel-subtitle">Ultime esecuzioni dello script giornaliero con verifica backup, Offerte Live e Analytics.</div>
                 </div>
               </div>
               <div className="table-wrap">
                 <table>
-                  <thead><tr><th>Data</th><th>Esito</th><th>Backup</th><th>WhatsApp</th><th>Durata</th><th>Avvisi/Errori</th></tr></thead>
+                  <thead><tr><th>Data</th><th>Esito</th><th>Backup</th><th>Verifica backup</th><th>Offerte Live</th><th>WhatsApp</th><th>Durata</th><th>Avvisi/Errori</th></tr></thead>
                   <tbody>
                     {(systemStatus?.history?.items || []).length === 0 ? (
-                      <tr><td colSpan="6">Nessuno storico trovato.</td></tr>
+                      <tr><td colSpan="8">Nessuno storico trovato.</td></tr>
                     ) : (
                       (systemStatus?.history?.items || []).map((item) => (
                         <tr key={item.key || item.run_dir_name || item.zip_name}>
                           <td>{formatSystemDate(item.date)}</td>
                           <td><span className={getSystemBadgeClass(item.normalized_status)}>{item.status || "-"}</span></td>
                           <td>{item.zip_name || item.backup || "-"}</td>
+                          {/* PATCH_69A_SYSTEM_REPORT_EXTENDED_FRONTEND_HISTORY */}
+                          <td>{item.backup_restore_check || "-"}</td>
+                          <td>{item.live_offers_quality || item.live_offers_24h || "-"}</td>
                           <td>{item.whatsapp || "-"}</td>
                           <td>{item.duration_seconds !== null && item.duration_seconds !== undefined ? `${item.duration_seconds}s` : "-"}</td>
                           <td>{item.warnings_count || 0}/{item.errors_count || 0}</td>

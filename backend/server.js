@@ -1,4 +1,4 @@
-﻿const express = require("express");
+const express = require("express");
 const cors = require("cors");
 const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
@@ -1905,6 +1905,11 @@ function saListBackupHistory(backupRoot) {
           postgres_dump: reportJson.postgresDump || "",
           live_offers_24h: reportJson.liveOffers24h || "",
           live_offers_last: reportJson.liveOffersLast || "",
+          // PATCH_69A_SYSTEM_REPORT_EXTENDED_BACKEND_HISTORY
+          backup_restore_check: reportJson.backupRestoreCheck || "",
+          backup_restore_status: saNormalizeStatus(reportJson.backupRestoreCheck || ""),
+          live_offers_quality: reportJson.liveOffersQuality || "",
+          analytics_text: reportJson.webAppAnalytics?.Text || "",
           whatsapp: notification.WhatsApp || "",
           email: notification.Email || "",
           duration_seconds: reportJson.durationSeconds ?? null,
@@ -2066,7 +2071,14 @@ app.get("/api/system-status", async (req, res) => {
       frontend: "",
       public: "",
       postgres_dump: "",
+      // PATCH_69A_SYSTEM_REPORT_EXTENDED_BACKEND_REPORT_INIT
+      backup_restore_check: "",
       live: "",
+      live_quality: "",
+      live_last: "",
+      analytics: "",
+      status: "",
+      normalized_status: "unknown",
       duration: "",
       warnings: [],
       errors: []
@@ -2212,30 +2224,53 @@ app.get("/api/system-status", async (req, res) => {
   }
 
   const reportText = saReadTextFileSafe(path.join(backupRoot, "last-daily-check-report.txt"));
+  // PATCH_69A_SYSTEM_REPORT_EXTENDED_BACKEND_JSON_READ
+  const reportJson = saReadJsonFileSafe(path.join(backupRoot, "last-daily-check-report.json"));
   const notificationText = saReadTextFileSafe(path.join(backupRoot, "last-notification-status.txt"));
 
   if (reportText) {
     const lines = reportText.split(/\r?\n/).filter(Boolean);
     const statusLine = lines[0] || "";
     const reportStatus = saNormalizeStatus(statusLine);
+    // PATCH_69A_SYSTEM_REPORT_EXTENDED_BACKEND_REPORT_PARSE
+    const reportWarnings = Array.isArray(reportJson.warnings) ? reportJson.warnings : saCollectReportSection(reportText, "Avvisi");
+    const reportErrors = Array.isArray(reportJson.errors) ? reportJson.errors : saCollectReportSection(reportText, "Errori");
+    const liveQuality = reportJson.liveOffersQuality || saExtractReportValue(reportText, "Offerte Live") || saExtractReportValue(reportText, "Offerte Live 24h");
+    const liveLast = reportJson.liveOffersLast || saExtractReportValue(reportText, "Ultima offerta Live");
+    const analyticsText = reportJson.webAppAnalytics?.Text || saExtractReportValue(reportText, "Analytics WebApp");
+    const backupRestoreCheck = reportJson.backupRestoreCheck || saExtractReportValue(reportText, "Verifica backup");
+    const reportDuration = reportJson.durationSeconds !== undefined && reportJson.durationSeconds !== null
+      ? `${reportJson.durationSeconds}s`
+      : saExtractReportValue(reportText, "Durata");
+
     result.report = {
       available: true,
       status_line: statusLine,
-      data: saExtractReportValue(reportText, "Data"),
-      backup: saExtractReportValue(reportText, "Backup"),
-      backend: saExtractReportValue(reportText, "Backend"),
-      frontend: saExtractReportValue(reportText, "Frontend"),
-      public: saExtractReportValue(reportText, "Pubblico"),
-      postgres_dump: saExtractReportValue(reportText, "Postgres dump"),
-      live: saExtractReportValue(reportText, "Offerte Live 24h"),
-      duration: saExtractReportValue(reportText, "Durata"),
-      warnings: saCollectReportSection(reportText, "Avvisi"),
-      errors: saCollectReportSection(reportText, "Errori"),
-      raw_excerpt: lines.slice(0, 35)
+      data: reportJson.date || saExtractReportValue(reportText, "Data"),
+      backup: reportJson.backup || saExtractReportValue(reportText, "Backup"),
+      backup_restore_check: backupRestoreCheck,
+      backend: reportJson.backend || saExtractReportValue(reportText, "Backend"),
+      frontend: reportJson.frontend || saExtractReportValue(reportText, "Frontend"),
+      public: reportJson.public || saExtractReportValue(reportText, "Pubblico"),
+      postgres_dump: reportJson.postgresDump || saExtractReportValue(reportText, "Postgres dump"),
+      live: liveQuality,
+      live_quality: liveQuality,
+      live_last: liveLast,
+      analytics: analyticsText,
+      status: reportJson.status || statusLine.replace(/^Smart Assistance - Check giornaliero:\s*/i, ""),
+      normalized_status: saNormalizeStatus(reportJson.status || statusLine),
+      duration: reportDuration,
+      warnings: reportWarnings,
+      errors: reportErrors,
+      raw_excerpt: lines.slice(0, 45)
     };
     result.services.frontend = { status: saNormalizeStatus(result.report.frontend), label: "Frontend", message: result.report.frontend || "Non verificato" };
     result.services.public = { status: saNormalizeStatus(result.report.public), label: "Dominio pubblico", message: result.report.public || "Non verificato" };
-    result.services.backup = { status: reportStatus, label: "Backup", message: result.report.backup || statusLine };
+    result.services.backup = {
+      status: reportStatus,
+      label: "Backup",
+      message: [result.report.backup, result.report.backup_restore_check].filter(Boolean).join(" | ") || statusLine
+    };
     result.warnings.push(...result.report.warnings);
     result.errors.push(...result.report.errors);
   } else {
