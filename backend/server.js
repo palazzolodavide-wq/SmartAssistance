@@ -2672,6 +2672,8 @@ async function getPublicWebAppGuides(category) {
 // PATCH_64_1_ANALYTICS_BACKEND_START
 const saAnalyticsCrypto = require("crypto");
 let saAnalyticsTablesReady = false;
+// PATCH_64_7_ANALYTICS_RETENTION_STATE
+let saAnalyticsRetentionLastRunAt = 0;
 
 async function ensureSaAnalyticsTables() {
   if (saAnalyticsTablesReady) return;
@@ -2734,6 +2736,45 @@ function normalizeSaAnalyticsPage(value) {
   return page.replace(/[^a-z0-9_\-\/]/g, "").slice(0, 80) || "app";
 }
 
+// PATCH_64_7_ANALYTICS_RETENTION_START
+function getSaAnalyticsEventsRetentionDays() {
+  const raw = Number.parseInt(process.env.SA_ANALYTICS_EVENTS_RETENTION_DAYS || "90", 10);
+
+  if (!Number.isFinite(raw)) {
+    return 90;
+  }
+
+  return Math.min(Math.max(raw, 7), 3650);
+}
+
+async function runSaAnalyticsEventsRetention(options = {}) {
+  const now = Date.now();
+  const force = Boolean(options.force);
+  const minIntervalMs = 24 * 60 * 60 * 1000;
+
+  if (!force && saAnalyticsRetentionLastRunAt && now - saAnalyticsRetentionLastRunAt < minIntervalMs) {
+    return;
+  }
+
+  saAnalyticsRetentionLastRunAt = now;
+
+  const retentionDays = getSaAnalyticsEventsRetentionDays();
+
+  try {
+    const result = await pool.query(`
+      DELETE FROM app_analytics_events
+      WHERE created_at < NOW() - ($1::INT * INTERVAL '1 day')
+    `, [retentionDays]);
+
+    if (Number(result.rowCount || 0) > 0) {
+      console.log(`Retention analytics WebApp: eliminati ${result.rowCount} eventi oltre ${retentionDays} giorni`);
+    }
+  } catch (error) {
+    console.error("Errore retention analytics WebApp:", error.message);
+  }
+}
+// PATCH_64_7_ANALYTICS_RETENTION_END
+
 // PATCH_64_3_ANALYTICS_PEAK_WHATSAPP_START
 async function notifySaAnalyticsPeakWhatsApp({ onlineNow, previousPeak }) {
   const chatId = String(process.env.SA_ANALYTICS_PEAK_WHATSAPP_CHAT_ID || "").trim();
@@ -2763,6 +2804,8 @@ async function recordSaAppAnalytics(req, options = {}) {
     const token = String(req.params?.token || "").trim();
     if (!token) return;
     await ensureSaAnalyticsTables();
+    // PATCH_64_7_ANALYTICS_RETENTION_CALL
+    await runSaAnalyticsEventsRetention();
 
     const customerResult = await pool.query(
       "SELECT id FROM users WHERE app_token = $1 LIMIT 1",
