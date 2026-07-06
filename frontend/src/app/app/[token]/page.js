@@ -130,6 +130,48 @@ export default function CustomerPage() {
   const [consentSaving, setConsentSaving] = useState(false);
   const [consentMessage, setConsentMessage] = useState("");
 
+  // PATCH_64_4_WEBAPP_HEARTBEAT_HELPER
+  function getSaAnalyticsSessionId() {
+    if (typeof window === "undefined" || !token) {
+      return "";
+    }
+
+    const storageKey = `sa_webapp_session_${token}`;
+    const existing = window.localStorage.getItem(storageKey);
+
+    if (existing) {
+      return existing;
+    }
+
+    const generated =
+      window.crypto?.randomUUID?.() ||
+      `sa-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+    window.localStorage.setItem(storageKey, generated);
+    return generated;
+  }
+
+  function sendSaAnalyticsHeartbeat(pageName = tab) {
+    if (!token || typeof window === "undefined") {
+      return;
+    }
+
+    const sessionId = getSaAnalyticsSessionId();
+
+    fetch(`/api/app/${token}/analytics/ping`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-sa-session-id": sessionId,
+      },
+      body: JSON.stringify({
+        page: pageName || "app",
+        event_type: "heartbeat",
+      }),
+      keepalive: true,
+    }).catch(() => {});
+  }
+
   useEffect(() => {
     async function load() {
       try {
@@ -212,6 +254,40 @@ export default function CustomerPage() {
       load();
     }
   }, [token]);
+
+  // PATCH_64_4_WEBAPP_HEARTBEAT_EFFECT
+  useEffect(() => {
+    if (!token || loading || error) {
+      return;
+    }
+
+    function runHeartbeat() {
+      if (typeof document !== "undefined" && document.hidden) {
+        return;
+      }
+
+      sendSaAnalyticsHeartbeat(tab);
+    }
+
+    runHeartbeat();
+
+    const intervalId = window.setInterval(runHeartbeat, 45000);
+
+    function handleVisibilityChange() {
+      if (!document.hidden) {
+        runHeartbeat();
+      }
+    }
+
+    window.addEventListener("focus", runHeartbeat);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener("focus", runHeartbeat);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [token, tab, loading, error]);
 
   useEffect(() => {
     if (["offers", "live"].includes(tab) && !canShowMarketingOffers) {
