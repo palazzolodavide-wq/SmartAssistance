@@ -2794,10 +2794,15 @@ async function recordSaAppAnalytics(req, options = {}) {
         updated_at = NOW()
     `, [sessionId, customerId, tokenHash, userAgentHash, page, eventType, visitIncrement]);
 
-    await pool.query(`
-      INSERT INTO app_analytics_events (customer_id, session_id, event_type, page)
-      VALUES ($1, $2, $3, $4)
-    `, [customerId, sessionId, eventType, page]);
+    // PATCH_64_6_HEARTBEAT_LIGHT_EVENTS
+    // Gli heartbeat aggiornano app_analytics_sessions ma non vengono salvati come eventi storici,
+    // così la statistica online resta precisa senza far crescere inutilmente app_analytics_events.
+    if (eventType !== "heartbeat") {
+      await pool.query(`
+        INSERT INTO app_analytics_events (customer_id, session_id, event_type, page)
+        VALUES ($1, $2, $3, $4)
+      `, [customerId, sessionId, eventType, page]);
+    }
 
     const onlineResult = await pool.query(`
       SELECT COUNT(*)::INT AS online_now
