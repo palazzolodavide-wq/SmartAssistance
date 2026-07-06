@@ -235,10 +235,69 @@ function Get-ContainerStatus {
     return $inspect.Text.Trim()
 }
 
+# PATCH_66A_SMART_LOG_WARNINGS_START
+function Test-SaTextHasOperationalError {
+    param(
+        [string]$ContainerName,
+        [string]$Text
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Text)) {
+        return $false
+    }
+
+    $lines = @($Text -split "`r?`n" | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    $joined = $lines -join "`n"
+
+    # npm audit e notice di build non sono errori runtime del servizio.
+    if ($ContainerName -in @("sa-frontend", "sa-backend")) {
+        $runtimeLines = @(
+            $lines | Where-Object {
+                $_ -notmatch "(?i)npm notice|npm audit|vulnerabilit|vulnerability|run npm audit|npm fund|packages are looking for funding|npm install -g npm|new major version of npm"
+            }
+        )
+
+        $runtimeText = $runtimeLines -join "`n"
+        return ($runtimeText -match "(?im)\buncaught\b|\bfatal\b|\bpanic\b|ECONNREFUSED|database.*error|connection refused|UnhandledPromiseRejection|EADDRINUSE")
+    }
+
+    # PATCH_66B_REDUCE_TRANSIENT_LOG_WARNINGS_CADDY
+    # Caddy può registrare 502/EOF o upstream refused durante rebuild/restart frontend.
+    # Lo stato reale pubblico viene già verificato più avanti con Invoke-WebRequest.
+    # Qui segnaliamo solo problemi strutturali TLS/certificati o crash.
+    if ($ContainerName -eq "sa-caddy") {
+        $criticalCaddyLines = @(
+            $lines | Where-Object {
+                $_ -match "(?i)\bpanic\b|\bfatal\b|certificate.*failed|acme.*failed|tls.*failed"
+            }
+        )
+
+        return ($criticalCaddyLines.Count -gt 0)
+    }
+
+    # PATCH_66B_REDUCE_TRANSIENT_LOG_WARNINGS_TELEGRAM
+    # Telegram Live può avere fetch/heartbeat temporanei durante restart backend o rete.
+    # Lo stato funzionale viene già verificato dal conteggio Offerte Live 24h e dall'ultima offerta importata.
+    # Qui segnaliamo solo crash reali del worker.
+    if ($ContainerName -eq "sa-telegram-live") {
+        $criticalTelegramLines = @(
+            $lines | Where-Object {
+                $_ -match "(?i)\buncaught\b|\bfatal\b|\bpanic\b|UnhandledPromiseRejection"
+            }
+        )
+
+        return ($criticalTelegramLines.Count -gt 0)
+    }
+
+    return ($joined -match "(?im)\buncaught\b|\bfatal\b|\bpanic\b|ECONNREFUSED|database.*error|connection refused|UnhandledPromiseRejection")
+}
+
 function Save-DockerLog {
     param([string]$ContainerName)
+
     $path = Join-Path $logsDir "$ContainerName-tail-300.log"
     $res = Invoke-JobCommand -FilePath "docker" -Arguments @("logs", "--tail", "300", $ContainerName) -OutputPath $path -IgnoreExitCode -TimeoutSeconds 45
+
     if ($res.ExitCode -eq 124) {
         Add-WarningMessage "${ContainerName}: docker logs timeout, log parziale o non disponibile"
     } elseif ($res.ExitCode -ne 0) {
@@ -246,16 +305,12 @@ function Save-DockerLog {
     }
 
     $text = [string]$res.Text
-    if ($text -match "(?im)(uncaught|fatal|panic|ECONNREFUSED|database.*error|connection refused)") {
-        Add-WarningMessage "${ContainerName}: log contiene possibili errori gravi da verificare"
-    }
-    if ($text -match "(?im)\bnpm error\b|high severity vulnerability|npm audit") {
-        Add-WarningMessage "${ContainerName}: npm audit/log segnala vulnerabilita o riavvii da verificare"
-    }
-    if ($ContainerName -eq "sa-telegram-live" -and $text -match "fetch failed|HEARTBEAT ERROR|WORKER LOOP ERROR") {
-        Add-WarningMessage "${ContainerName}: presenti errori temporanei di collegamento al backend nei log"
+
+    if (Test-SaTextHasOperationalError -ContainerName $ContainerName -Text $text) {
+        Add-WarningMessage "${ContainerName}: log contiene errori runtime recenti da verificare"
     }
 }
+# PATCH_66A_SMART_LOG_WARNINGS_END
 
 function Create-ZipFromDirectory {
     param(
