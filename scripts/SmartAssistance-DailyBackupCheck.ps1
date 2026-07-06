@@ -34,6 +34,8 @@ $summary = [ordered]@{
     PostgresDump = "NON TESTATO"
     LiveOffers24h = "NON TESTATO"
     LiveOffersLast = "NON TESTATO"
+    # PATCH_67A_LIVE_OFFERS_QUALITY_SUMMARY
+    LiveOffersQuality = "NON TESTATO"
 }
 
 function Add-WarningMessage {
@@ -530,23 +532,129 @@ try {
     } else {
         $liveColumns = @($columnsRes.Text -split "`r?`n" | ForEach-Object { $_.Trim() } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
         if ($liveColumns -contains "imported_at") {
-            $countSql = "SELECT COUNT(*) FROM live_offers WHERE status='published' AND imported_at >= NOW() - INTERVAL '24 hours';"
-            $countRes = Invoke-JobCommand -FilePath "docker" -Arguments @("exec", "sa-postgres", "psql", "-U", $dbUser, "-d", $dbName, "-At", "-c", $countSql) -OutputPath (Join-Path $stateDir "live_offers_count_24h.txt") -TimeoutSeconds 60 -IgnoreExitCode
-            if ($countRes.ExitCode -eq 0) {
-                $summary.LiveOffers24h = $countRes.Text.Trim()
-            } else {
-                Add-WarningMessage "Conteggio live_offers 24h non riuscito: $($countRes.Text.Trim())"
+            # PATCH_67A_LIVE_OFFERS_QUALITY_START
+            function ConvertTo-Patch67Int {
+                param(
+                    [object]$Value,
+                    [int]$Default = 0
+                )
+
+                $parsed = 0
+                if ([int]::TryParse(([string]$Value).Trim(), [ref]$parsed)) {
+                    return $parsed
+                }
+
+                return $Default
             }
 
-            $lastSql = "SELECT COALESCE(to_char(imported_at,'YYYY-MM-DD HH24:MI:SS'),'') || ' | ' || COALESCE(source_channel,'') || ' | ' || COALESCE(asin,'') || ' | ' || left(COALESCE(title,''),80) FROM live_offers ORDER BY imported_at DESC NULLS LAST LIMIT 1;"
-            $lastRes = Invoke-JobCommand -FilePath "docker" -Arguments @("exec", "sa-postgres", "psql", "-U", $dbUser, "-d", $dbName, "-At", "-c", $lastSql) -OutputPath (Join-Path $stateDir "live_offers_latest.txt") -TimeoutSeconds 60 -IgnoreExitCode
-            if ($lastRes.ExitCode -eq 0) {
-                $lastValue = $lastRes.Text.Trim()
-                if ([string]::IsNullOrWhiteSpace($lastValue)) { $lastValue = "Nessuna offerta trovata" }
-                $summary.LiveOffersLast = $lastValue
+            $maxAgeHours = ConvertTo-Patch67Int -Value $env:SA_LIVE_OFFERS_MAX_AGE_HOURS -Default 24
+            if ($maxAgeHours -lt 1) { $maxAgeHours = 24 }
+
+            $qualitySql = @"
+WITH stats AS (
+  SELECT
+    COUNT(*) FILTER (WHERE status = 'published')::INT AS published_total,
+    COUNT(*) FILTER (WHERE status = 'published' AND imported_at >= NOW() - INTERVAL '24 hours')::INT AS published_24h,
+    COUNT(*) FILTER (WHERE status = 'published' AND imported_at >= NOW() - INTERVAL '6 hours')::INT AS published_6h,
+    CASE
+      WHEN MAX(imported_at) IS NULL THEN -1
+      ELSE FLOOR(EXTRACT(EPOCH FROM (NOW() - MAX(imported_at))) / 60)::INT
+    END AS latest_age_minutes
+  FROM live_offers
+),
+latest AS (
+  SELECT
+    imported_at,
+    COALESCE(source_channel, '') AS source_channel,
+    COALESCE(asin, '') AS asin,
+    COALESCE(LEFT(REPLACE(title, '|', ' '), 80), '') AS title
+  FROM live_offers
+  ORDER BY imported_at DESC NULLS LAST
+  LIMIT 1
+),
+channel_rows AS (
+  SELECT
+    COALESCE(NULLIF(source_channel, ''), '(n/d)') AS source_channel,
+    COUNT(*)::INT AS rows_24h
+  FROM live_offers
+  WHERE status = 'published'
+    AND imported_at >= NOW() - INTERVAL '24 hours'
+  GROUP BY COALESCE(NULLIF(source_channel, ''), '(n/d)')
+),
+channels AS (
+  SELECT
+    COALESCE(string_agg(source_channel || ':' || rows_24h, ', ' ORDER BY rows_24h DESC, source_channel), 'nessuno') AS channels_24h
+  FROM channel_rows
+)
+SELECT
+  s.published_24h || '|' ||
+  s.published_6h || '|' ||
+  s.published_total || '|' ||
+  s.latest_age_minutes || '|' ||
+  COALESCE(to_char(l.imported_at, 'YYYY-MM-DD HH24:MI:SS'), '') || '|' ||
+  COALESCE(l.source_channel, '') || '|' ||
+  COALESCE(l.asin, '') || '|' ||
+  COALESCE(l.title, '') || '|' ||
+  ch.channels_24h
+FROM stats s
+LEFT JOIN latest l ON TRUE
+CROSS JOIN channels ch;
+"@
+
+            $qualityRes = Invoke-JobCommand -FilePath "docker" -Arguments @("exec", "sa-postgres", "psql", "-U", $dbUser, "-d", $dbName, "-At", "-F", "|", "-c", $qualitySql) -OutputPath (Join-Path $stateDir "live_offers_quality.txt") -TimeoutSeconds 60 -IgnoreExitCode
+
+            if ($qualityRes.ExitCode -eq 0) {
+                $qualityLine = @($qualityRes.Text -split "`r?`n" | Where-Object { $_ -match "\|" } | Select-Object -First 1)
+
+                if ([string]::IsNullOrWhiteSpace($qualityLine)) {
+                    Add-WarningMessage "Controllo qualita Offerte Live senza risultato"
+                    $summary.LiveOffersQuality = "ATTENZIONE - controllo qualita senza risultato"
+                    $summary.LiveOffers24h = "0"
+                    $summary.LiveOffersLast = "Nessuna offerta trovata"
+                } else {
+                    $parts = ([string]$qualityLine).Split('|')
+
+                    $published24h = if ($parts.Count -gt 0) { ConvertTo-Patch67Int -Value $parts[0] -Default 0 } else { 0 }
+                    $published6h = if ($parts.Count -gt 1) { ConvertTo-Patch67Int -Value $parts[1] -Default 0 } else { 0 }
+                    $publishedTotal = if ($parts.Count -gt 2) { ConvertTo-Patch67Int -Value $parts[2] -Default 0 } else { 0 }
+                    $latestAgeMinutes = if ($parts.Count -gt 3) { ConvertTo-Patch67Int -Value $parts[3] -Default -1 } else { -1 }
+                    $latestImportedAt = if ($parts.Count -gt 4) { ([string]$parts[4]).Trim() } else { "" }
+                    $latestSource = if ($parts.Count -gt 5) { ([string]$parts[5]).Trim() } else { "" }
+                    $latestAsin = if ($parts.Count -gt 6) { ([string]$parts[6]).Trim() } else { "" }
+                    $latestTitle = if ($parts.Count -gt 7) { ([string]$parts[7]).Trim() } else { "" }
+                    $channels24h = if ($parts.Count -gt 8) { ([string]$parts[8]).Trim() } else { "nessuno" }
+
+                    $summary.LiveOffers24h = [string]$published24h
+
+                    if ([string]::IsNullOrWhiteSpace($latestImportedAt)) {
+                        $summary.LiveOffersLast = "Nessuna offerta trovata"
+                    } else {
+                        $summary.LiveOffersLast = "$latestImportedAt | $latestSource | $latestAsin | $latestTitle"
+                    }
+
+                    if ($latestAgeMinutes -ge 0) {
+                        $latestAgeHoursText = "$([math]::Round(($latestAgeMinutes / 60), 1))h fa"
+                    } else {
+                        $latestAgeHoursText = "n/d"
+                    }
+
+                    $qualityState = "OK"
+
+                    if ($published24h -le 0) {
+                        $qualityState = "ATTENZIONE"
+                        Add-WarningMessage "Offerte Live: nessuna offerta pubblicata nelle ultime 24h"
+                    } elseif ($latestAgeMinutes -ge 0 -and $latestAgeMinutes -gt ($maxAgeHours * 60)) {
+                        $qualityState = "ATTENZIONE"
+                        Add-WarningMessage "Offerte Live: ultima offerta piu vecchia di ${maxAgeHours}h"
+                    }
+
+                    $summary.LiveOffersQuality = "$qualityState - $published24h pubblicate 24h / $published6h ultime 6h / totale pubblicate: $publishedTotal / ultima: $latestAgeHoursText / canali 24h: $channels24h"
+                }
             } else {
-                Add-WarningMessage "Lettura ultima live_offers non riuscita: $($lastRes.Text.Trim())"
+                Add-WarningMessage "Controllo qualita Offerte Live non riuscito: $($qualityRes.Text.Trim())"
+                $summary.LiveOffersQuality = "ATTENZIONE - controllo qualita non riuscito"
             }
+                        # PATCH_67A_LIVE_OFFERS_QUALITY_END
         } elseif ($liveColumns.Count -gt 0) {
             Add-WarningMessage "Tabella live_offers leggibile ma colonna imported_at assente"
         } else {
@@ -704,7 +812,9 @@ $reportLines = New-Object System.Collections.Generic.List[string]
 [void]$reportLines.Add("Frontend: $($summary.Frontend)")
 [void]$reportLines.Add("Pubblico: $($summary.Pubblico)")
 [void]$reportLines.Add("Postgres dump: $($summary.PostgresDump)")
-[void]$reportLines.Add("Offerte Live 24h: $($summary.LiveOffers24h) - ultima: $($summary.LiveOffersLast)")
+# PATCH_67A_LIVE_OFFERS_QUALITY_REPORT
+[void]$reportLines.Add("Offerte Live: $($summary.LiveOffersQuality)")
+[void]$reportLines.Add("Ultima offerta Live: $($summary.LiveOffersLast)")
 # PATCH_65_WEBAPP_ANALYTICS_REPORT_LINE
 [void]$reportLines.Add("Analytics WebApp: $($webAppAnalytics.Text)")
 if ($warnings.Count -gt 0) {
@@ -733,6 +843,8 @@ try {
         postgresDump = $summary.PostgresDump
         liveOffers24h = $summary.LiveOffers24h
         liveOffersLast = $summary.LiveOffersLast
+        # PATCH_67A_LIVE_OFFERS_QUALITY_JSON
+        liveOffersQuality = $summary.LiveOffersQuality
         # PATCH_65_WEBAPP_ANALYTICS_REPORT_JSON
         webAppAnalytics = $webAppAnalytics
         warnings = @($warnings)
