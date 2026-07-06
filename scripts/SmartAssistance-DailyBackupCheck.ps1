@@ -1,4 +1,4 @@
-﻿<#
+<#
 Smart Assistance - Patch 58.6
 Backup giornaliero + check generale + notifiche opzionali.
 Compatibile Windows PowerShell 5.1.
@@ -557,6 +557,90 @@ if ($errors.Count -gt 0) {
     $exitCode = 1
 }
 
+# PATCH_65_WEBAPP_ANALYTICS_REPORT_START
+function ConvertTo-SaInt {
+    param([object]$Value)
+
+    $parsed = 0
+    if ([int]::TryParse(([string]$Value).Trim(), [ref]$parsed)) {
+        return $parsed
+    }
+
+    return 0
+}
+
+function Get-WebAppAnalyticsReport {
+    $retentionDays = ConvertTo-SaInt $env:SA_ANALYTICS_EVENTS_RETENTION_DAYS
+    if ($retentionDays -lt 7) { $retentionDays = 90 }
+
+    $fallback = [pscustomobject]@{
+        Available = $false
+        Text = "non disponibile"
+        VisitsToday = 0
+        UniqueCustomersToday = 0
+        PeakOnlineToday = 0
+        SessionsTotal = 0
+        Active5m = 0
+        EventsTotal = 0
+        LastActivityAt = ""
+        RetentionDays = $retentionDays
+        Error = ""
+    }
+
+    try {
+        $sql = "SELECT (SELECT COUNT(*)::INT FROM app_analytics_events WHERE event_type = 'visit' AND created_at::DATE = CURRENT_DATE), (SELECT COUNT(DISTINCT customer_id)::INT FROM app_analytics_events WHERE created_at::DATE = CURRENT_DATE), (SELECT COALESCE(MAX(peak_online), 0)::INT FROM app_analytics_peaks WHERE scope = 'day:' || CURRENT_DATE::TEXT), (SELECT COUNT(*)::INT FROM app_analytics_sessions), (SELECT COUNT(*)::INT FROM app_analytics_sessions WHERE last_seen_at >= NOW() - INTERVAL '5 minutes'), (SELECT COUNT(*)::INT FROM app_analytics_events), (SELECT COALESCE(TO_CHAR(MAX(last_seen_at) AT TIME ZONE 'Europe/Rome', 'YYYY-MM-DD HH24:MI:SS'), '') FROM app_analytics_sessions);"
+
+        $raw = docker exec sa-postgres psql -U sauser -d smartassistance -t -A -F "|" -c $sql 2>&1
+
+        if ($LASTEXITCODE -ne 0) {
+            $fallback.Error = (($raw | Out-String).Trim())
+            return $fallback
+        }
+
+        $line = @($raw | Where-Object { $_ -match "\|" } | Select-Object -First 1)
+
+        if ([string]::IsNullOrWhiteSpace($line)) {
+            $fallback.Error = "Query analytics senza risultato"
+            return $fallback
+        }
+
+        $parts = [string]$line -split "\|"
+
+        $visitsToday = if ($parts.Count -gt 0) { ConvertTo-SaInt $parts[0] } else { 0 }
+        $uniqueCustomersToday = if ($parts.Count -gt 1) { ConvertTo-SaInt $parts[1] } else { 0 }
+        $peakOnlineToday = if ($parts.Count -gt 2) { ConvertTo-SaInt $parts[2] } else { 0 }
+        $sessionsTotal = if ($parts.Count -gt 3) { ConvertTo-SaInt $parts[3] } else { 0 }
+        $active5m = if ($parts.Count -gt 4) { ConvertTo-SaInt $parts[4] } else { 0 }
+        $eventsTotal = if ($parts.Count -gt 5) { ConvertTo-SaInt $parts[5] } else { 0 }
+        $lastActivityAt = if ($parts.Count -gt 6) { ([string]$parts[6]).Trim() } else { "" }
+
+        if ([string]::IsNullOrWhiteSpace($lastActivityAt)) {
+            $lastActivityAt = "nessuno"
+        }
+
+        return [pscustomobject]@{
+            Available = $true
+            Text = "visite oggi: $visitsToday / utenti unici oggi: $uniqueCustomersToday / picco oggi: $peakOnlineToday / sessioni totali: $sessionsTotal / attivi 5 min: $active5m / eventi: $eventsTotal / ultimo accesso: $lastActivityAt / retention: ${retentionDays}gg"
+            VisitsToday = $visitsToday
+            UniqueCustomersToday = $uniqueCustomersToday
+            PeakOnlineToday = $peakOnlineToday
+            SessionsTotal = $sessionsTotal
+            Active5m = $active5m
+            EventsTotal = $eventsTotal
+            LastActivityAt = $lastActivityAt
+            RetentionDays = $retentionDays
+            Error = ""
+        }
+    } catch {
+        $fallback.Error = $_.Exception.Message
+        return $fallback
+    }
+}
+# PATCH_65_WEBAPP_ANALYTICS_REPORT_END
+
+# PATCH_65_WEBAPP_ANALYTICS_REPORT_LOAD
+$webAppAnalytics = Get-WebAppAnalyticsReport
+
 $reportLines = New-Object System.Collections.Generic.List[string]
 [void]$reportLines.Add("Smart Assistance - Check giornaliero: $status")
 [void]$reportLines.Add("Data: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')")
@@ -566,6 +650,8 @@ $reportLines = New-Object System.Collections.Generic.List[string]
 [void]$reportLines.Add("Pubblico: $($summary.Pubblico)")
 [void]$reportLines.Add("Postgres dump: $($summary.PostgresDump)")
 [void]$reportLines.Add("Offerte Live 24h: $($summary.LiveOffers24h) - ultima: $($summary.LiveOffersLast)")
+# PATCH_65_WEBAPP_ANALYTICS_REPORT_LINE
+[void]$reportLines.Add("Analytics WebApp: $($webAppAnalytics.Text)")
 if ($warnings.Count -gt 0) {
     [void]$reportLines.Add("Avvisi:")
     foreach ($w in $warnings) { [void]$reportLines.Add("- $w") }
@@ -592,6 +678,8 @@ try {
         postgresDump = $summary.PostgresDump
         liveOffers24h = $summary.LiveOffers24h
         liveOffersLast = $summary.LiveOffersLast
+        # PATCH_65_WEBAPP_ANALYTICS_REPORT_JSON
+        webAppAnalytics = $webAppAnalytics
         warnings = @($warnings)
         errors = @($errors)
         durationSeconds = $duration
