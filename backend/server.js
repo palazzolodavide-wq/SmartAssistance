@@ -1907,6 +1907,8 @@ function saListBackupHistory(backupRoot) {
           live_offers_last: reportJson.liveOffersLast || "",
           // PATCH_69A_SYSTEM_REPORT_EXTENDED_BACKEND_HISTORY
           backup_restore_check: reportJson.backupRestoreCheck || "",
+          // PATCH_70A_BACKUP_RETENTION_BACKEND_HISTORY
+          backup_retention: reportJson.backupRetention || "",
           backup_restore_status: saNormalizeStatus(reportJson.backupRestoreCheck || ""),
           live_offers_quality: reportJson.liveOffersQuality || "",
           analytics_text: reportJson.webAppAnalytics?.Text || "",
@@ -2073,6 +2075,8 @@ app.get("/api/system-status", async (req, res) => {
       postgres_dump: "",
       // PATCH_69A_SYSTEM_REPORT_EXTENDED_BACKEND_REPORT_INIT
       backup_restore_check: "",
+      // PATCH_70A_BACKUP_RETENTION_BACKEND_REPORT_INIT
+      backup_retention: "",
       live: "",
       live_quality: "",
       live_last: "",
@@ -2239,6 +2243,8 @@ app.get("/api/system-status", async (req, res) => {
     const liveLast = reportJson.liveOffersLast || saExtractReportValue(reportText, "Ultima offerta Live");
     const analyticsText = reportJson.webAppAnalytics?.Text || saExtractReportValue(reportText, "Analytics WebApp");
     const backupRestoreCheck = reportJson.backupRestoreCheck || saExtractReportValue(reportText, "Verifica backup");
+    // PATCH_70A_BACKUP_RETENTION_BACKEND_REPORT_PARSE
+    const backupRetention = reportJson.backupRetention || saExtractReportValue(reportText, "Retention backup");
     const reportDuration = reportJson.durationSeconds !== undefined && reportJson.durationSeconds !== null
       ? `${reportJson.durationSeconds}s`
       : saExtractReportValue(reportText, "Durata");
@@ -2249,6 +2255,7 @@ app.get("/api/system-status", async (req, res) => {
       data: reportJson.date || saExtractReportValue(reportText, "Data"),
       backup: reportJson.backup || saExtractReportValue(reportText, "Backup"),
       backup_restore_check: backupRestoreCheck,
+      backup_retention: backupRetention,
       backend: reportJson.backend || saExtractReportValue(reportText, "Backend"),
       frontend: reportJson.frontend || saExtractReportValue(reportText, "Frontend"),
       public: reportJson.public || saExtractReportValue(reportText, "Pubblico"),

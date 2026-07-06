@@ -9,7 +9,10 @@ param(
     [string]$ProjectRoot = "C:\SmartAssistance",
     [string]$BackupRoot = "C:\SmartAssistance\backups",
     [string]$ConfigPath = "C:\SmartAssistance\scripts\smart-assistance-monitor-config.json",
-    [switch]$NoNotify
+    [switch]$NoNotify,
+    # PATCH_70A_BACKUP_RETENTION_PARAMS
+    [int]$BackupRetentionCount = 30,
+    [switch]$DisableBackupRetentionCleanup
 )
 
 $ErrorActionPreference = "Stop"
@@ -34,6 +37,8 @@ $summary = [ordered]@{
     PostgresDump = "NON TESTATO"
     # PATCH_68A_BACKUP_RESTORE_CHECK_SUMMARY
     BackupRestoreCheck = "NON TESTATO"
+    # PATCH_70A_BACKUP_RETENTION_SUMMARY
+    BackupRetention = "NON ESEGUITA"
     LiveOffers24h = "NON TESTATO"
     LiveOffersLast = "NON TESTATO"
     # PATCH_67A_LIVE_OFFERS_QUALITY_SUMMARY
@@ -463,6 +468,140 @@ function Test-SaBackupZipRestoreStructure {
     return [pscustomobject]$result
 }
 # PATCH_68A_BACKUP_RESTORE_CHECK_FUNCTION_END
+# PATCH_70A_BACKUP_RETENTION_FUNCTION_START
+function Get-SaFolderSizeBytes {
+    param([string]$Path)
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        return 0
+    }
+
+    $sum = 0
+    Get-ChildItem -LiteralPath $Path -Recurse -File -ErrorAction SilentlyContinue | ForEach-Object {
+        $sum += [int64]$_.Length
+    }
+
+    return $sum
+}
+
+function Invoke-SaBackupRetentionCleanup {
+    param(
+        [string]$BackupRoot,
+        [string]$CurrentRunDir,
+        [string]$CurrentBackupZip,
+        [int]$RetentionCount = 30,
+        [bool]$DisableCleanup = $false
+    )
+
+    $result = [ordered]@{
+        Ok = $true
+        Enabled = (-not $DisableCleanup)
+        RetentionCount = $RetentionCount
+        ZipTotalBefore = 0
+        RunTotalBefore = 0
+        ZipTotalAfter = 0
+        RunTotalAfter = 0
+        TotalSizeMbBefore = 0
+        TotalSizeMbAfter = 0
+        DeletedZipCount = 0
+        DeletedRunCount = 0
+        DeletedBytes = 0
+        DeletedMb = 0
+        DeletedZipNames = @()
+        DeletedRunDirs = @()
+        SmallZipCount = 0
+        Error = ""
+        Text = "NON ESEGUITA"
+    }
+
+    try {
+        if ($RetentionCount -lt 7) {
+            $RetentionCount = 30
+            $result.RetentionCount = 30
+        }
+
+        if (-not (Test-Path -LiteralPath $BackupRoot)) {
+            $result.Ok = $false
+            $result.Error = "BackupRoot non trovato: $BackupRoot"
+            $result.Text = "ATTENZIONE - BackupRoot non trovato"
+            return [pscustomobject]$result
+        }
+
+        $rootInfo = Get-Item -LiteralPath $BackupRoot -ErrorAction Stop
+        if (-not $rootInfo.PSIsContainer -or $rootInfo.FullName.Length -lt 10 -or $rootInfo.FullName -match "^[A-Za-z]:\\$") {
+            $result.Ok = $false
+            $result.Error = "BackupRoot non sicuro: $($rootInfo.FullName)"
+            $result.Text = "ATTENZIONE - BackupRoot non sicuro"
+            return [pscustomobject]$result
+        }
+
+        $allFilesBefore = @(Get-ChildItem -LiteralPath $BackupRoot -Recurse -File -ErrorAction SilentlyContinue)
+        $zipFiles = @(Get-ChildItem -LiteralPath $BackupRoot -Filter "SmartAssistanceBackup-*.zip" -File -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending)
+        $runDirs = @(Get-ChildItem -LiteralPath $BackupRoot -Directory -Filter "run-*" -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending)
+
+        $result.ZipTotalBefore = $zipFiles.Count
+        $result.RunTotalBefore = $runDirs.Count
+        $result.TotalSizeMbBefore = [math]::Round(((($allFilesBefore | Measure-Object Length -Sum).Sum) / 1MB), 2)
+        $result.SmallZipCount = @($zipFiles | Where-Object { $_.Length -lt 1MB }).Count
+
+        $currentZipName = if ([string]::IsNullOrWhiteSpace($CurrentBackupZip)) { "" } else { Split-Path $CurrentBackupZip -Leaf }
+        $currentRunName = if ([string]::IsNullOrWhiteSpace($CurrentRunDir)) { "" } else { Split-Path $CurrentRunDir -Leaf }
+
+        $zipDeleteCandidates = @($zipFiles | Select-Object -Skip $RetentionCount | Where-Object { $_.Name -ne $currentZipName })
+        $runDeleteCandidates = @($runDirs | Select-Object -Skip $RetentionCount | Where-Object { $_.Name -ne $currentRunName })
+
+        if (-not $DisableCleanup) {
+            foreach ($zip in $zipDeleteCandidates) {
+                try {
+                    $size = [int64]$zip.Length
+                    Remove-Item -LiteralPath $zip.FullName -Force -ErrorAction Stop
+                    $result.DeletedZipCount += 1
+                    $result.DeletedBytes += $size
+                    $result.DeletedZipNames += $zip.Name
+                } catch {
+                    $result.Ok = $false
+                    $result.Error = "Errore cancellazione ZIP $($zip.Name): $($_.Exception.Message)"
+                }
+            }
+
+            foreach ($dir in $runDeleteCandidates) {
+                try {
+                    $size = Get-SaFolderSizeBytes -Path $dir.FullName
+                    Remove-Item -LiteralPath $dir.FullName -Recurse -Force -ErrorAction Stop
+                    $result.DeletedRunCount += 1
+                    $result.DeletedBytes += $size
+                    $result.DeletedRunDirs += $dir.Name
+                } catch {
+                    $result.Ok = $false
+                    $result.Error = "Errore cancellazione run $($dir.Name): $($_.Exception.Message)"
+                }
+            }
+        }
+
+        $allFilesAfter = @(Get-ChildItem -LiteralPath $BackupRoot -Recurse -File -ErrorAction SilentlyContinue)
+        $zipFilesAfter = @(Get-ChildItem -LiteralPath $BackupRoot -Filter "SmartAssistanceBackup-*.zip" -File -ErrorAction SilentlyContinue)
+        $runDirsAfter = @(Get-ChildItem -LiteralPath $BackupRoot -Directory -Filter "run-*" -ErrorAction SilentlyContinue)
+
+        $result.ZipTotalAfter = $zipFilesAfter.Count
+        $result.RunTotalAfter = $runDirsAfter.Count
+        $result.TotalSizeMbAfter = [math]::Round(((($allFilesAfter | Measure-Object Length -Sum).Sum) / 1MB), 2)
+        $result.DeletedMb = [math]::Round(($result.DeletedBytes / 1MB), 2)
+
+        $modeText = if ($DisableCleanup) { "DRY-RUN" } else { "OK" }
+        $result.Text = "$modeText - conserva ultimi $RetentionCount backup / ZIP: $($result.ZipTotalAfter) / run: $($result.RunTotalAfter) / spazio: $($result.TotalSizeMbAfter) MB / eliminati: $($result.DeletedZipCount) ZIP, $($result.DeletedRunCount) run / recuperato: $($result.DeletedMb) MB"
+
+        if ($result.SmallZipCount -gt 0) {
+            $result.Text += " / ZIP piccoli rilevati: $($result.SmallZipCount)"
+        }
+    } catch {
+        $result.Ok = $false
+        $result.Error = $_.Exception.Message
+        $result.Text = "ATTENZIONE - retention backup non riuscita"
+    }
+
+    return [pscustomobject]$result
+}
+# PATCH_70A_BACKUP_RETENTION_FUNCTION_END
 function Send-WhatsAppNotification {
     param(
         [object]$Config,
@@ -890,6 +1029,27 @@ CROSS JOIN channels ch;
         # PATCH_68A_BACKUP_RESTORE_CHECK_RUN_END
     }
 
+    # PATCH_70A_BACKUP_RETENTION_RUN_START
+    $retentionResult = Invoke-SaBackupRetentionCleanup `
+        -BackupRoot $BackupRoot `
+        -CurrentRunDir $runDir `
+        -CurrentBackupZip $backupZip `
+        -RetentionCount $BackupRetentionCount `
+        -DisableCleanup ([bool]$DisableBackupRetentionCleanup)
+
+    $summary.BackupRetention = $retentionResult.Text
+
+    try {
+        Save-TextFile -Path (Join-Path $stateDir "backup_retention.json") -Content (($retentionResult | ConvertTo-Json -Depth 6))
+    } catch {
+        Add-WarningMessage "Retention backup eseguita ma report JSON non salvato: $($_.Exception.Message)"
+    }
+
+    if (-not $retentionResult.Ok) {
+        Add-WarningMessage "Retention backup: $($retentionResult.Text)"
+    }
+    # PATCH_70A_BACKUP_RETENTION_RUN_END
+
 } catch {
     Add-ErrorMessage "Errore generale: $($_.Exception.Message)"
 }
@@ -995,6 +1155,8 @@ $reportLines = New-Object System.Collections.Generic.List[string]
 [void]$reportLines.Add("Backup: $($summary.Backup)")
 # PATCH_68A_BACKUP_RESTORE_CHECK_REPORT
 [void]$reportLines.Add("Verifica backup: $($summary.BackupRestoreCheck)")
+# PATCH_70A_BACKUP_RETENTION_REPORT
+[void]$reportLines.Add("Retention backup: $($summary.BackupRetention)")
 [void]$reportLines.Add("Backend: $($summary.Backend)")
 [void]$reportLines.Add("Frontend: $($summary.Frontend)")
 [void]$reportLines.Add("Pubblico: $($summary.Pubblico)")
@@ -1026,6 +1188,8 @@ try {
         backup = $summary.Backup
         # PATCH_68A_BACKUP_RESTORE_CHECK_JSON
         backupRestoreCheck = $summary.BackupRestoreCheck
+        # PATCH_70A_BACKUP_RETENTION_JSON
+        backupRetention = $summary.BackupRetention
         backend = $summary.Backend
         frontend = $summary.Frontend
         public = $summary.Pubblico

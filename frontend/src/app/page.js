@@ -4897,6 +4897,8 @@ export default function Home() {
                     <div className="quick-item"><div><div className="row-title">Data</div><div className="muted-text">{formatSystemDate(systemStatus.report.data)}</div></div></div>
                     <div className="quick-item"><div><div className="row-title">Backup ZIP</div><div className="muted-text">{systemStatus.report.backup || "-"}</div></div></div>
                     <div className="quick-item"><div><div className="row-title">Verifica backup</div><div className="muted-text">{systemStatus.report.backup_restore_check || "-"}</div></div></div>
+                    {/* PATCH_70A_BACKUP_RETENTION_FRONTEND_REPORT */}
+                    <div className="quick-item"><div><div className="row-title">Retention backup</div><div className="muted-text">{systemStatus.report.backup_retention || "-"}</div></div></div>
                     <div className="quick-item"><div><div className="row-title">Backend</div><div className="muted-text">{systemStatus.report.backend || "-"}</div></div></div>
                     <div className="quick-item"><div><div className="row-title">Frontend</div><div className="muted-text">{systemStatus.report.frontend || "-"}</div></div></div>
                     <div className="quick-item"><div><div className="row-title">Dominio pubblico</div><div className="muted-text">{systemStatus.report.public || "-"}</div></div></div>
