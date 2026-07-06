@@ -2051,6 +2051,8 @@ app.get("/api/system-status", async (req, res) => {
       public: { status: "unknown", label: "Dominio pubblico", message: "Non verificato" },
       telegram: { status: "unknown", label: "Telegram Live", message: "Non verificato" },
       whatsapp: { status: "unknown", label: "WhatsApp", message: "Non verificato" },
+      // PATCH_64_8_SYSTEM_ANALYTICS_BACKEND_SERVICE
+      analytics: { status: "unknown", label: "Analytics WebApp", message: "Non verificato" },
       backup: { status: "unknown", label: "Backup", message: "Non verificato" }
     },
     backup: { accessible: false, count: 0, latest: null, files: [] },
@@ -2071,6 +2073,20 @@ app.get("/api/system-status", async (req, res) => {
     },
     notification: { available: false, data: "", report: "", whatsapp: "", email: "" },
     live: { imported_24h: 0, active_live: 0, latest: null, service: null },
+    // PATCH_64_8_SYSTEM_ANALYTICS_BACKEND_RESULT
+    analytics: {
+      status: "unknown",
+      sessions_total: 0,
+      online_now: 0,
+      active_5m: 0,
+      events_total: 0,
+      visits_total: 0,
+      activity_total: 0,
+      retention_days: 90,
+      last_event_at: null,
+      last_session_seen_at: null,
+      message: "Non verificato"
+    },
     warnings: [],
     errors: []
   };
@@ -2087,6 +2103,51 @@ app.get("/api/system-status", async (req, res) => {
   } catch (err) {
     result.services.postgres = { status: "error", label: "PostgreSQL", message: err.message };
     result.errors.push(`PostgreSQL: ${err.message}`);
+  }
+
+  // PATCH_64_8_SYSTEM_ANALYTICS_BACKEND_LOAD
+  try {
+    await ensureSaAnalyticsTables();
+    const retentionDays = getSaAnalyticsEventsRetentionDays();
+    const analyticsResult = await pool.query(`
+      SELECT
+        (SELECT COUNT(*)::INT FROM app_analytics_sessions) AS sessions_total,
+        (SELECT COUNT(*)::INT FROM app_analytics_sessions WHERE last_seen_at >= NOW() - INTERVAL '2 minutes') AS online_now,
+        (SELECT COUNT(*)::INT FROM app_analytics_sessions WHERE last_seen_at >= NOW() - INTERVAL '5 minutes') AS active_5m,
+        (SELECT COUNT(*)::INT FROM app_analytics_events) AS events_total,
+        (SELECT COUNT(*)::INT FROM app_analytics_events WHERE event_type = 'visit') AS visits_total,
+        (SELECT COUNT(*)::INT FROM app_analytics_events WHERE event_type = 'activity') AS activity_total,
+        (SELECT MAX(created_at) FROM app_analytics_events) AS last_event_at,
+        (SELECT MAX(last_seen_at) FROM app_analytics_sessions) AS last_session_seen_at
+    `);
+
+    const analyticsInfo = analyticsResult.rows[0] || {};
+    const analyticsMessage = `Sessioni ${analyticsInfo.sessions_total || 0} / Eventi ${analyticsInfo.events_total || 0} / Retention ${retentionDays}gg`;
+
+    result.analytics = {
+      status: "ok",
+      sessions_total: Number(analyticsInfo.sessions_total || 0),
+      online_now: Number(analyticsInfo.online_now || 0),
+      active_5m: Number(analyticsInfo.active_5m || 0),
+      events_total: Number(analyticsInfo.events_total || 0),
+      visits_total: Number(analyticsInfo.visits_total || 0),
+      activity_total: Number(analyticsInfo.activity_total || 0),
+      retention_days: retentionDays,
+      last_event_at: analyticsInfo.last_event_at || null,
+      last_session_seen_at: analyticsInfo.last_session_seen_at || null,
+      message: analyticsMessage
+    };
+
+    result.services.analytics = {
+      status: "ok",
+      label: "Analytics WebApp",
+      message: analyticsMessage
+    };
+  } catch (err) {
+    result.analytics.status = "warning";
+    result.analytics.message = err.message;
+    result.services.analytics = { status: "warning", label: "Analytics WebApp", message: err.message };
+    result.warnings.push(`Analytics WebApp: ${err.message}`);
   }
 
   try {

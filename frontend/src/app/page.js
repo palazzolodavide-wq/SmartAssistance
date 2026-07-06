@@ -2328,6 +2328,8 @@ export default function Home() {
       services.public || { label: "Dominio pubblico", status: "unknown", message: "Non verificato" },
       services.telegram || { label: "Telegram Live", status: "unknown", message: "Non verificato" },
       services.whatsapp || { label: "WhatsApp", status: "unknown", message: "Non verificato" },
+      // PATCH_64_8_SYSTEM_ANALYTICS_FRONTEND_SERVICE
+      services.analytics || { label: "Analytics WebApp", status: "unknown", message: "Non verificato" },
       services.backup || { label: "Backup", status: "unknown", message: "Non verificato" },
     ];
   }
@@ -4847,6 +4849,8 @@ export default function Home() {
               <KpiCard label="Backup recenti" value={systemStatus?.backup?.count || 0} />
               <KpiCard label="Check storici" value={systemStatus?.history?.count || 0} />
               <KpiCard label="Offerte Live 24h" value={systemStatus?.live?.imported_24h || 0} />
+              {/* PATCH_64_8_SYSTEM_ANALYTICS_FRONTEND_KPI */}
+              <KpiCard label="Sessioni WebApp" value={formatInteger(systemStatus?.analytics?.sessions_total)} />
               <KpiCard label="WhatsApp" value={getSystemStatusLabel(systemStatus?.services?.whatsapp?.status)} />
             </section>
 
@@ -4889,6 +4893,32 @@ export default function Home() {
                     <div className="quick-item"><div><div className="row-title">Notifica WhatsApp</div><div className="muted-text">{systemStatus.notification?.available ? `WhatsApp: ${systemStatus.notification.whatsapp || "-"} / Email: ${systemStatus.notification.email || "-"}` : "Non disponibile"}</div></div></div>
                   </div>
                 )}
+              </div>
+            </section>
+
+            {/* PATCH_64_8_SYSTEM_ANALYTICS_FRONTEND_UI */}
+            <section className="panel" style={{ marginTop: "18px" }}>
+              <div className="panel-header">
+                <div>
+                  <h2 className="panel-title">Analytics WebApp</h2>
+                  <div className="panel-subtitle">Stato tecnico del tracciamento WebApp e della retention eventi.</div>
+                </div>
+                <span className={getSystemBadgeClass(systemStatus?.analytics?.status)}>{getSystemStatusLabel(systemStatus?.analytics?.status)}</span>
+              </div>
+
+              <section className="kpi-grid">
+                <KpiCard label="Sessioni totali" value={formatInteger(systemStatus?.analytics?.sessions_total)} compact />
+                <KpiCard label="Online ora" value={formatInteger(systemStatus?.analytics?.online_now)} compact />
+                <KpiCard label="Attivi 5 min" value={formatInteger(systemStatus?.analytics?.active_5m)} compact />
+                <KpiCard label="Eventi totali" value={formatInteger(systemStatus?.analytics?.events_total)} compact />
+                <KpiCard label="Visite totali" value={formatInteger(systemStatus?.analytics?.visits_total)} compact />
+                <KpiCard label="Retention" value={(formatInteger(systemStatus?.analytics?.retention_days || 90) + " gg")} compact />
+              </section>
+
+              <div className="quick-list" style={{ marginTop: "14px" }}>
+                <div className="quick-item"><div><div className="row-title">Ultimo evento registrato</div><div className="muted-text">{formatSystemDate(systemStatus?.analytics?.last_event_at)}</div></div></div>
+                <div className="quick-item"><div><div className="row-title">Ultima sessione vista</div><div className="muted-text">{formatSystemDate(systemStatus?.analytics?.last_session_seen_at)}</div></div></div>
+                <div className="quick-item"><div><div className="row-title">Messaggio tecnico</div><div className="muted-text">{systemStatus?.analytics?.message || "Non disponibile"}</div></div></div>
               </div>
             </section>
 
