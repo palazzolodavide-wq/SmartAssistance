@@ -91,3 +91,7 @@ server.*.js
 !database/
 !database/patches/
 !database/patches/*.sql
+
+# Smart Assistance local-only tools and secrets
+secrets/
+tools/rclone/
