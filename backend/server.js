@@ -389,7 +389,7 @@ function extractEmbeddedAmazonUrl(value) {
       candidates.push(decodeUrlRepeated(paramValue));
     }
   } catch (err) {
-    // Non Ã¨ un URL parsabile, proviamo comunque con il testo grezzo.
+    // Non ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¨ un URL parsabile, proviamo comunque con il testo grezzo.
   }
 
   for (const candidate of candidates) {
@@ -569,12 +569,12 @@ function formatEuroAmount(value) {
     return "";
   }
 
-  return `${parsed.toFixed(2).replace(".", ",")} â‚¬`;
+  return `${parsed.toFixed(2).replace(".", ",")} ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬`;
 }
 
 function extractEuroAmounts(text) {
   const value = String(text || "");
-  const regex = /(?:â‚¬|EUR)?\s*([0-9]{1,4}(?:[.,][0-9]{1,2})?)\s*(?:â‚¬|euro|EUR)/gi;
+  const regex = /(?:ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬|EUR)?\s*([0-9]{1,4}(?:[.,][0-9]{1,2})?)\s*(?:ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬|euro|EUR)/gi;
   const amounts = [];
   let match;
 
@@ -607,7 +607,7 @@ function extractEuroAmounts(text) {
 function extractExplicitDiscountPercent(text) {
   const value = String(text || "");
   const patterns = [
-    /(?:-|âˆ’)\s*([1-9][0-9]?)\s*%/i,
+    /(?:-|ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¹ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢)\s*([1-9][0-9]?)\s*%/i,
     /sconto\s*(?:del\s*)?([1-9][0-9]?)\s*%/i,
     /risparmi(?:o|a)?\s*(?:del\s*)?([1-9][0-9]?)\s*%/i,
     /coupon\s*(?:del\s*)?([1-9][0-9]?)\s*%/i
@@ -639,7 +639,7 @@ function extractLivePriceByExplicitPatterns(text) {
   const value = String(text || "").replace(/\s+/g, " ");
 
   const currentInstead = value.match(
-    /(?:prezzo\s*(?:finale|finito)?|solo|a\s+soli|offerta|ora|adesso)?\s*([0-9]{1,4}(?:[.,][0-9]{1,2})?)\s*(?:â‚¬|euro|EUR)\s*(?:invece\s+di|anzich[eÃ©Ã¨]|al\s+posto\s+di|prima\s+di|da)\s*([0-9]{1,4}(?:[.,][0-9]{1,2})?)\s*(?:â‚¬|euro|EUR)/i
+    /(?:prezzo\s*(?:finale|finito)?|solo|a\s+soli|offerta|ora|adesso)?\s*([0-9]{1,4}(?:[.,][0-9]{1,2})?)\s*(?:ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬|euro|EUR)\s*(?:invece\s+di|anzich[eÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¨]|al\s+posto\s+di|prima\s+di|da)\s*([0-9]{1,4}(?:[.,][0-9]{1,2})?)\s*(?:ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬|euro|EUR)/i
   );
 
   if (currentInstead?.[1] && currentInstead?.[2]) {
@@ -655,7 +655,7 @@ function extractLivePriceByExplicitPatterns(text) {
   }
 
   const fromTo = value.match(
-    /(?:da|prezzo\s+normale|prezzo\s+di\s+listino|listino|prima|era)\s*([0-9]{1,4}(?:[.,][0-9]{1,2})?)\s*(?:â‚¬|euro|EUR).*?(?:a|ora|adesso|prezzo\s*(?:finale|finito)?)\s*([0-9]{1,4}(?:[.,][0-9]{1,2})?)\s*(?:â‚¬|euro|EUR)/i
+    /(?:da|prezzo\s+normale|prezzo\s+di\s+listino|listino|prima|era)\s*([0-9]{1,4}(?:[.,][0-9]{1,2})?)\s*(?:ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬|euro|EUR).*?(?:a|ora|adesso|prezzo\s*(?:finale|finito)?)\s*([0-9]{1,4}(?:[.,][0-9]{1,2})?)\s*(?:ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬|euro|EUR)/i
   );
 
   if (fromTo?.[1] && fromTo?.[2]) {
@@ -671,7 +671,7 @@ function extractLivePriceByExplicitPatterns(text) {
   }
 
   const normalWithCoupon = value.match(
-    /(?:prezzo\s+(?:normale|di\s+listino|iniziale|precedente)|listino|prima|era|da)\s*([0-9]{1,4}(?:[.,][0-9]{1,2})?)\s*(?:â‚¬|euro|EUR).*?(?:coupon|codice|sconto|buono|voucher|extra)\s*(?:da|di)?\s*([0-9]{1,4}(?:[.,][0-9]{1,2})?)\s*(?:â‚¬|euro|EUR)/i
+    /(?:prezzo\s+(?:normale|di\s+listino|iniziale|precedente)|listino|prima|era|da)\s*([0-9]{1,4}(?:[.,][0-9]{1,2})?)\s*(?:ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬|euro|EUR).*?(?:coupon|codice|sconto|buono|voucher|extra)\s*(?:da|di)?\s*([0-9]{1,4}(?:[.,][0-9]{1,2})?)\s*(?:ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬|euro|EUR)/i
   );
 
   if (normalWithCoupon?.[1] && normalWithCoupon?.[2]) {
@@ -687,7 +687,7 @@ function extractLivePriceByExplicitPatterns(text) {
   }
 
   const couponThenNormal = value.match(
-    /(?:coupon|codice|sconto|buono|voucher|extra)\s*(?:da|di)?\s*([0-9]{1,4}(?:[.,][0-9]{1,2})?)\s*(?:â‚¬|euro|EUR).*?(?:prezzo\s+(?:normale|di\s+listino|iniziale|precedente)|listino|prima|era|da)\s*([0-9]{1,4}(?:[.,][0-9]{1,2})?)\s*(?:â‚¬|euro|EUR)/i
+    /(?:coupon|codice|sconto|buono|voucher|extra)\s*(?:da|di)?\s*([0-9]{1,4}(?:[.,][0-9]{1,2})?)\s*(?:ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬|euro|EUR).*?(?:prezzo\s+(?:normale|di\s+listino|iniziale|precedente)|listino|prima|era|da)\s*([0-9]{1,4}(?:[.,][0-9]{1,2})?)\s*(?:ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬|euro|EUR)/i
   );
 
   if (couponThenNormal?.[1] && couponThenNormal?.[2]) {
@@ -703,7 +703,7 @@ function extractLivePriceByExplicitPatterns(text) {
   }
 
   const finalWithCoupon = value.match(
-    /(?:prezzo\s*(?:finale|finito)?|finale|totale|paghi|a\s+soli|solo)\s*([0-9]{1,4}(?:[.,][0-9]{1,2})?)\s*(?:â‚¬|euro|EUR).*?(?:coupon|codice|sconto|buono|voucher|extra)\s*(?:da|di)?\s*([0-9]{1,4}(?:[.,][0-9]{1,2})?)\s*(?:â‚¬|euro|EUR)/i
+    /(?:prezzo\s*(?:finale|finito)?|finale|totale|paghi|a\s+soli|solo)\s*([0-9]{1,4}(?:[.,][0-9]{1,2})?)\s*(?:ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬|euro|EUR).*?(?:coupon|codice|sconto|buono|voucher|extra)\s*(?:da|di)?\s*([0-9]{1,4}(?:[.,][0-9]{1,2})?)\s*(?:ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬|euro|EUR)/i
   );
 
   if (finalWithCoupon?.[1] && finalWithCoupon?.[2]) {
@@ -719,7 +719,7 @@ function extractLivePriceByExplicitPatterns(text) {
   }
 
   const normalWithPercent = value.match(
-    /(?:prezzo\s+(?:normale|di\s+listino|iniziale|precedente)|listino|prima|era|da)\s*([0-9]{1,4}(?:[.,][0-9]{1,2})?)\s*(?:â‚¬|euro|EUR).*?(?:-|âˆ’|sconto\s*(?:del)?|coupon\s*(?:del)?)\s*([1-9][0-9]?)\s*%/i
+    /(?:prezzo\s+(?:normale|di\s+listino|iniziale|precedente)|listino|prima|era|da)\s*([0-9]{1,4}(?:[.,][0-9]{1,2})?)\s*(?:ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬|euro|EUR).*?(?:-|ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¹ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢|sconto\s*(?:del)?|coupon\s*(?:del)?)\s*([1-9][0-9]?)\s*%/i
   );
 
   if (normalWithPercent?.[1] && normalWithPercent?.[2]) {
@@ -741,8 +741,8 @@ function extractLivePriceByExplicitPatterns(text) {
 function isPreviousPriceAmount(item) {
   const before = item.before || "";
 
-  return /(invece\s+di|anzich[eÃ©Ã¨]|prima|listino|precedente|barrato|era|costava|prezzo\s+(?:normale|di\s+partenza|iniziale|consigliato|di\s+listino)|da\s*)$/i.test(before) ||
-    /(invece\s+di|anzich[eÃ©Ã¨]|prima|listino|precedente|barrato|era|costava|prezzo\s+(?:normale|di\s+partenza|iniziale|consigliato|di\s+listino))/i.test(before);
+  return /(invece\s+di|anzich[eÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¨]|prima|listino|precedente|barrato|era|costava|prezzo\s+(?:normale|di\s+partenza|iniziale|consigliato|di\s+listino)|da\s*)$/i.test(before) ||
+    /(invece\s+di|anzich[eÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¨]|prima|listino|precedente|barrato|era|costava|prezzo\s+(?:normale|di\s+partenza|iniziale|consigliato|di\s+listino))/i.test(before);
 }
 
 function isCurrentPriceAmount(item) {
@@ -910,7 +910,7 @@ function buildLiveOfferTitle(text, asin) {
     .replace(/https?:\/\/[^\s<>"')]+/gi, "")
     .split(/\r?\n/)
     .map((line) => line
-      .replace(/[ðŸ”¥ðŸ’¥ðŸš¨âœ…â­ï¸â­ðŸŽðŸ‘‰âž¡ï¸ðŸ”—]/g, "")
+      .replace(/[ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¥ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¥ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¨ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â­ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¯ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â­ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â½ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¹Ãƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¾ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¯ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â]/g, "")
       .replace(/\s+/g, " ")
       .trim()
     )
@@ -1647,7 +1647,7 @@ function getDeviceAccessorySearches(device) {
       `${fallbackBase} monitor pc`,
       `${fallbackBase} webcam`,
       `${fallbackBase} casse pc`,
-      `${fallbackBase} gruppo continuitÃ `
+      `${fallbackBase} gruppo continuitÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â `
     ];
   }
 
@@ -1913,6 +1913,221 @@ app.post("/api/live-offers/heartbeat", verifyLiveImportSecret, async (req, res) 
 });
 
 
+
+// PATCH_77C_PASSWORD_RECOVERY_START
+const saPasswordResetLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: "Troppe richieste di recupero password. Riprova piÃƒÂ¹ tardi." }
+});
+
+function saNormalizeEmail(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function saHashPasswordResetToken(token) {
+  return crypto.createHash("sha256").update(String(token || ""), "utf8").digest("hex");
+}
+
+function saPasswordResetBaseUrl() {
+  return String(process.env.SA_PUBLIC_BASE_URL || process.env.PUBLIC_BASE_URL || "https://7590.ns0.it").replace(/\/+$/, "");
+}
+
+function saPasswordResetDropDir() {
+  // PATCH_77C_FIX2_DEDICATED_RESET_MOUNT
+  // Percorso dedicato RW: C:\SmartAssistance\backups\password-reset -> /password-reset
+  const configured = process.env.SA_PASSWORD_RESET_DROP_DIR;
+  if (configured && configured.trim()) return configured.trim();
+
+  if (fs.existsSync("/password-reset")) {
+    return "/password-reset";
+  }
+
+  if (fs.existsSync("/smart-assistance-backups")) {
+    return "/smart-assistance-backups/password-reset";
+  }
+
+  return path.join(__dirname, "backups", "password-reset");
+}
+function saWritePasswordResetDropFile(payload) {
+  const dropDir = saPasswordResetDropDir();
+  fs.mkdirSync(dropDir, { recursive: true });
+
+  const safeDate = new Date().toISOString().replace(/[:.]/g, "-");
+  const content = [
+    "Smart Assistance - Password reset link",
+    `Generated at: ${new Date().toISOString()}`,
+    `Email: ${payload.email}`,
+    `Expires at: ${payload.expiresAt.toISOString()}`,
+    "",
+    "Link reset:",
+    payload.resetUrl,
+    "",
+    "Nota: link monouso. Conservare solo localmente sul server."
+  ].join("\n");
+
+  const latestPath = path.join(dropDir, "latest-password-reset-link.txt");
+  const historyPath = path.join(dropDir, `password-reset-${safeDate}.txt`);
+
+  fs.writeFileSync(latestPath, content, "utf8");
+  fs.writeFileSync(historyPath, content, "utf8");
+
+  return { latestPath, historyPath };
+}
+
+app.post("/api/password/forgot", saPasswordResetLimiter, async (req, res) => {
+  const genericResponse = {
+    message: "Se l'indirizzo ÃƒÂ¨ registrato, la procedura di recupero ÃƒÂ¨ stata avviata. Controlla il canale di recupero configurato."
+  };
+
+  try {
+    const email = saNormalizeEmail(req.body?.email);
+
+    if (!email || !email.includes("@")) {
+      return res.json(genericResponse);
+    }
+
+    const userResult = await pool.query(
+      `
+      SELECT id, email, role
+      FROM users
+      WHERE LOWER(email) = LOWER($1)
+      LIMIT 1
+      `,
+      [email]
+    );
+
+    if (userResult.rows.length > 0) {
+      const user = userResult.rows[0];
+      const rawToken = crypto.randomBytes(32).toString("hex");
+      const tokenHash = saHashPasswordResetToken(rawToken);
+      const ttlMinutes = Number.parseInt(process.env.SA_PASSWORD_RESET_TTL_MINUTES || "30", 10);
+      const expiresAt = new Date(Date.now() + Math.max(5, ttlMinutes) * 60 * 1000);
+      const resetUrl = `${saPasswordResetBaseUrl()}/password-reset?token=${encodeURIComponent(rawToken)}`;
+
+      await pool.query(
+        `
+        INSERT INTO password_reset_tokens (
+          user_id,
+          token_hash,
+          requested_email,
+          requester_ip,
+          user_agent,
+          expires_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6)
+        `,
+        [
+          user.id,
+          tokenHash,
+          email,
+          req.ip || "",
+          req.get("user-agent") || "",
+          expiresAt
+        ]
+      );
+
+      try {
+        const dropInfo = saWritePasswordResetDropFile({
+          email,
+          resetUrl,
+          expiresAt
+        });
+
+        console.log(
+          `[SA_PASSWORD_RESET] Link generato per ${email}. Salvato localmente in ${dropInfo.latestPath}`
+        );
+      } catch (fileErr) {
+        console.error("[SA_PASSWORD_RESET] Token creato ma scrittura file locale fallita:", fileErr);
+      }
+    }
+
+    return res.json(genericResponse);
+  } catch (err) {
+    console.error("[SA_PASSWORD_RESET] forgot error:", err);
+    return res.json(genericResponse);
+  }
+});
+
+app.post("/api/password/reset", saPasswordResetLimiter, async (req, res) => {
+  const token = String(req.body?.token || "").trim();
+  const password = String(req.body?.password || "");
+
+  if (!token || token.length < 40) {
+    return res.status(400).json({ message: "Token non valido o scaduto." });
+  }
+
+  if (password.length < 8) {
+    return res.status(400).json({ message: "La nuova password deve contenere almeno 8 caratteri." });
+  }
+
+  const tokenHash = saHashPasswordResetToken(token);
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    const tokenResult = await client.query(
+      `
+      SELECT
+        prt.id,
+        prt.user_id,
+        u.email
+      FROM password_reset_tokens prt
+      JOIN users u ON u.id = prt.user_id
+      WHERE prt.token_hash = $1
+        AND prt.used_at IS NULL
+        AND prt.expires_at > NOW()
+      LIMIT 1
+      FOR UPDATE
+      `,
+      [tokenHash]
+    );
+
+    if (tokenResult.rows.length === 0) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ message: "Token non valido o scaduto." });
+    }
+
+    const row = tokenResult.rows[0];
+    const hashedPassword = await bcrypt.hash(password, 12);
+
+    await client.query(
+      `
+      UPDATE users
+      SET password_hash = $1,
+          updated_at = NOW()
+      WHERE id = $2
+      `,
+      [hashedPassword, row.user_id]
+    );
+
+    await client.query(
+      `
+      UPDATE password_reset_tokens
+      SET used_at = NOW()
+      WHERE id = $1
+      `,
+      [row.id]
+    );
+
+    await client.query("COMMIT");
+
+    console.log(`[SA_PASSWORD_RESET] Password aggiornata tramite token per ${row.email}`);
+
+    return res.json({ message: "Password aggiornata correttamente. Ora puoi accedere." });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("[SA_PASSWORD_RESET] reset error:", err);
+    return res.status(500).json({ message: "Errore durante il reset password." });
+  } finally {
+    client.release();
+  }
+});
+// PATCH_77C_PASSWORD_RECOVERY_END
+
 app.use("/api", authenticateAdmin);
 
 
@@ -2021,8 +2236,8 @@ function saCollectReportSection(text, title) {
   for (let index = start + 1; index < lines.length; index += 1) {
     const trimmed = lines[index].trim();
     if (!trimmed) continue;
-    if (/^[A-Za-zÀ-ÿ ]+:$/.test(trimmed) || /^Durata:/i.test(trimmed)) break;
-    collected.push(trimmed.replace(/^[-•]\s*/, ""));
+    if ((trimmed.endsWith(":") && !trimmed.startsWith("- ")) || /^Durata:/i.test(trimmed)) break;
+    collected.push(trimmed.replace(/^[-ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢]\s*/, ""));
   }
   return collected;
 }
@@ -2425,7 +2640,9 @@ app.get("/api/users", async (req, res) => {
         whatsapp_consent_at,
         COALESCE(consent_note, '') AS consent_note
       FROM users
-      ORDER BY created_at DESC
+        WHERE role <> 'admin'
+        -- PATCH_77B_HIDE_ADMIN_FROM_USERS
+        ORDER BY created_at DESC
     `);
 
     res.json(result.rows);
@@ -2684,7 +2901,7 @@ app.put("/api/users/:id", async (req, res) => {
     if (!privacy_consent) {
       return res.status(400).json({
         success: false,
-        error: "Il consenso privacy Ã¨ obbligatorio per mantenere il cliente attivo."
+        error: "Il consenso privacy ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¨ obbligatorio per mantenere il cliente attivo."
       });
     }
 
@@ -3011,7 +3228,7 @@ async function recordSaAppAnalytics(req, options = {}) {
 
     // PATCH_64_6_HEARTBEAT_LIGHT_EVENTS
     // Gli heartbeat aggiornano app_analytics_sessions ma non vengono salvati come eventi storici,
-    // così la statistica online resta precisa senza far crescere inutilmente app_analytics_events.
+    // cosÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ la statistica online resta precisa senza far crescere inutilmente app_analytics_events.
     if (eventType !== "heartbeat") {
       await pool.query(`
         INSERT INTO app_analytics_events (customer_id, session_id, event_type, page)
@@ -4121,7 +4338,7 @@ app.get("/api/receipt-upload/:token", async (req, res) => {
     if (item.used_at) {
       return res.status(410).json({
         success: false,
-        error: "Questo link Ã¨ giÃ  stato usato"
+        error: "Questo link ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¨ giÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â  stato usato"
       });
     }
 
@@ -4228,7 +4445,7 @@ app.post("/api/receipt-upload/:token/receipt", async (req, res) => {
     if (uploadToken.used_at) {
       return res.status(410).json({
         success: false,
-        error: "Questo link Ã¨ giÃ  stato usato"
+        error: "Questo link ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¨ giÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â  stato usato"
       });
     }
 
@@ -4868,7 +5085,7 @@ app.get("/api/webapp-guides", async (req, res) => {
 app.post("/api/webapp-guides", async (req, res) => {
   try {
     const {
-      icon = "ðŸ’¡",
+      icon = "ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡",
       title,
       description,
       categoria = "generale",
@@ -4904,7 +5121,7 @@ app.post("/api/webapp-guides", async (req, res) => {
       RETURNING *
       `,
       [
-        String(icon || "ðŸ’¡").trim(),
+        String(icon || "ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡").trim(),
         String(title || "").trim(),
         String(description || "").trim(),
         normalizeGuideCategory(categoria),
@@ -4929,7 +5146,7 @@ app.put("/api/webapp-guides/:id", async (req, res) => {
   try {
     const { id } = req.params;
     const {
-      icon = "ðŸ’¡",
+      icon = "ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡",
       title,
       description,
       categoria = "generale",
@@ -4966,7 +5183,7 @@ app.put("/api/webapp-guides/:id", async (req, res) => {
       RETURNING *
       `,
       [
-        String(icon || "ðŸ’¡").trim(),
+        String(icon || "ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡").trim(),
         String(title || "").trim(),
         String(description || "").trim(),
         normalizeGuideCategory(categoria),

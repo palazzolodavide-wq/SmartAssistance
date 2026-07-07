@@ -95,3 +95,6 @@ server.*.js
 # Smart Assistance local-only tools and secrets
 secrets/
 tools/rclone/
+# Smart Assistance local runtime reset links and patch backups
+backups/password-reset/
+*.bak_patch*

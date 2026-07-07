@@ -35,6 +35,7 @@ services:
       - ./backend:/app
       - ./backups:/smart-assistance-backups:ro
 
+      - "./backups/password-reset:/password-reset:rw"
     ports:
       - "127.0.0.1:3006:3006"
 
