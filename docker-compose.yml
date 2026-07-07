@@ -11,7 +11,7 @@ services:
       POSTGRES_PASSWORD: change_me
 
     ports:
-      - "5433:5432"
+      - "127.0.0.1:5433:5432"
 
     volumes:
       - ./postgres-data:/var/lib/postgresql/data
@@ -36,7 +36,7 @@ services:
       - ./backups:/smart-assistance-backups:ro
 
     ports:
-      - "3006:3006"
+      - "127.0.0.1:3006:3006"
 
     depends_on:
       - postgres
@@ -54,7 +54,7 @@ services:
       - ./frontend:/app
 
     ports:
-      - "3005:3000"
+      - "127.0.0.1:3005:3000"
 
     depends_on:
       - backend

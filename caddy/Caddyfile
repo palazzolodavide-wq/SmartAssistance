@@ -1,10 +1,18 @@
-﻿7590.ns0.it {
+7590.ns0.it {
+	encode gzip
 
-    encode gzip
+	# PATCH_74A_ONLINE_EXPOSURE_HARDENING
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "geolocation=(), microphone=(), camera=(), payment=(), usb=(), interest-cohort=()"
+		-Server
+	}
 
-    @api path /api/*
+	@api path /api/*
+	reverse_proxy @api sa-backend:3006
 
-    reverse_proxy @api host.docker.internal:3006
-
-    reverse_proxy host.docker.internal:3005
+	reverse_proxy sa-frontend:3000
 }
