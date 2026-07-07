@@ -2,6 +2,8 @@ const express = require("express");
 const cors = require("cors");
 const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
+const helmet = require("helmet");
+const rateLimit = require("express-rate-limit");
 const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
@@ -19,7 +21,74 @@ require("dotenv").config();
 const pool = require("./utils/db");
 const app = express();
 
-app.use(cors());
+/*
+|--------------------------------------------------------------------------
+| SECURITY HARDENING
+|--------------------------------------------------------------------------
+*/
+// PATCH_73A_BACKEND_SECURITY_HARDENING_START
+app.set("trust proxy", 1);
+app.disable("x-powered-by");
+
+app.use(helmet({
+  contentSecurityPolicy: false,
+  crossOriginEmbedderPolicy: false
+}));
+
+const allowedCorsOrigins = (process.env.CORS_ALLOWED_ORIGINS || "https://7590.ns0.it,http://localhost:3005,http://127.0.0.1:3005")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
+app.use(cors({
+  origin(origin, callback) {
+    if (!origin || allowedCorsOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+
+    return callback(new Error("CORS origin not allowed"));
+  },
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization", "X-Live-Import-Secret"],
+  maxAge: 86400
+}));
+
+app.use((err, req, res, next) => {
+  if (err && err.message === "CORS origin not allowed") {
+    return res.status(403).json({
+      success: false,
+      message: "Origine non consentita"
+    });
+  }
+
+  return next(err);
+});
+
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: Number(process.env.API_RATE_LIMIT_15M || 1200),
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: {
+    success: false,
+    message: "Troppe richieste. Riprova tra qualche minuto."
+  },
+  skip: (req) => req.path === "/health"
+});
+
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: Number(process.env.LOGIN_RATE_LIMIT_15M || 15),
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: {
+    success: false,
+    message: "Troppi tentativi di accesso. Riprova tra qualche minuto."
+  }
+});
+
+app.use("/api", apiLimiter);
+// PATCH_73A_BACKEND_SECURITY_HARDENING_END
 app.use(express.json({ limit: "12mb" }));
 
 
@@ -51,7 +120,7 @@ app.get("/health", async (req, res) => {
 |--------------------------------------------------------------------------
 */
 
-app.post("/api/login", async (req, res) => {
+app.post("/api/login", loginLimiter, async (req, res) => {
   try {
     const { email, password } = req.body;
 

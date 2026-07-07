@@ -86,3 +86,8 @@ archive/
 # Temporary server snapshots
 server.*.js
 !server.js
+
+# Smart Assistance database migration patches must be versioned.
+!database/
+!database/patches/
+!database/patches/*.sql
