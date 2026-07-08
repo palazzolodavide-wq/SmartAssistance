@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
@@ -514,18 +514,18 @@ export default function CustomerPage() {
 
   function getSupportIntro(category) {
     if (category === "notebook") {
-      return "Per supporto sul tuo notebook, configurazioni, backup, garanzia o consigli sugli accessori, contattaci direttamente su WhatsApp.";
+      return "Per supporto sul tuo notebook, configurazioni, backup, garanzia o consigli sugli accessori, fai riferimento ai contatti utili del negozio.";
     }
 
     if (category === "desktop") {
-      return "Per supporto sul tuo PC, configurazioni, periferiche, garanzia o consigli sulla postazione, contattaci direttamente su WhatsApp.";
+      return "Per supporto sul tuo PC, configurazioni, periferiche, garanzia o consigli sulla postazione, fai riferimento ai contatti utili del negozio.";
     }
 
     if (category === "smartphone") {
-      return "Per supporto sul tuo smartphone, configurazioni, garanzia o consigli sugli accessori, contattaci direttamente su WhatsApp.";
+      return "Per supporto sul tuo smartphone, configurazioni, garanzia o consigli sugli accessori, fai riferimento ai contatti utili del negozio.";
     }
 
-    return "Per supporto sul tuo dispositivo, configurazioni, garanzia o consigli sugli accessori, contattaci direttamente su WhatsApp.";
+    return "Per supporto sul tuo dispositivo, configurazioni, garanzia o consigli sugli accessori, fai riferimento ai contatti utili del negozio.";
   }
 
   function normalizeOfferCategory(value) {
@@ -2098,27 +2098,12 @@ export default function CustomerPage() {
             <section className="sa-home-assist sa-app-card" style={styles.card}>
               <h2 style={{ margin: "0 0 8px" }}>💬 Hai bisogno di assistenza?</h2>
               <p style={{ color: "#cbd5e1", lineHeight: 1.5 }}>
-                Scrivici su WhatsApp: ti aiutiamo con configurazione,
+                Ti aiutiamo con configurazione,
                 garanzia, accessori e supporto post vendita.
               </p>
 
               <div style={styles.compactCtaRow}>
-                <button
-                  onClick={openWhatsApp}
-                  style={{
-                    width: "100%",
-                    border: "none",
-                    borderRadius: "16px",
-                    padding: "15px",
-                    background: "#25D366",
-                    color: "white",
-                    fontWeight: "bold",
-                    fontSize: "16px",
-                    cursor: "pointer",
-                  }}
-                >
-                  Apri WhatsApp
-                </button>
+                
 
                 <button
                   type="button"
@@ -2394,26 +2379,101 @@ export default function CustomerPage() {
 
             <div className="sa-support-grid">
             <section className="sa-support-main sa-app-card" style={styles.card}>
-              <h2 style={{ marginTop: 0 }}>Siamo qui per aiutarti</h2>
-              <p style={{ color: "#cbd5e1", lineHeight: 1.5 }}>
-                {getSupportIntro(primaryCategory)}
-              </p>
-              <button
-                onClick={openWhatsApp}
+              <h2 style={{ marginTop: 0 }}>📞 Contatti utili</h2>
+              <div style={{ display: "grid", gap: "6px", color: "#e5e7eb", lineHeight: 1.5 }}>
+                <strong style={{ display: "block", fontSize: "16px", marginBottom: "12px" }}>
+                Euronics La Via Lattea
+              </strong>
+<div style={{ display: "grid", gap: "10px", marginTop: "2px" }}>
+                <a
+                  href="https://www.google.com/maps/search/?api=1&query=Euronics%20La%20Via%20Lattea%20Viale%20Regina%20Margherita%2029%2095125%20Catania"
+                  target="_blank"
+                  rel="noreferrer"
+                  aria-label="Apri indirizzo in Google Maps"
+                  style={{
+                    display: "flex",
+                    alignItems: "flex-start",
+                    gap: "10px",
+                    padding: "11px 12px",
+                    borderRadius: "14px",
+                    background: "rgba(15,23,42,.42)",
+                    border: "1px solid rgba(148,163,184,.18)",
+                    color: "#e5e7eb",
+                    textDecoration: "none",
+                    lineHeight: 1.35
+                  }}
+                >
+                  <span style={{ fontSize: "18px", lineHeight: 1.2 }}>📍</span>
+                  <span style={{ display: "grid", gap: "3px" }}>
+                    <strong style={{ fontSize: "14px" }}>Apri su Google Maps</strong>
+                    <span style={{ color: "#cbd5e1", fontSize: "14px" }}>Viale Regina Margherita 29</span>
+                    <span style={{ color: "#cbd5e1", fontSize: "14px" }}>95125 Catania</span>
+                  </span>
+                </a>
+
+                <a
+                  href="tel:+390958832003"
+                  aria-label="Chiama il negozio"
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "10px",
+                    padding: "11px 12px",
+                    borderRadius: "14px",
+                    background: "rgba(37,99,235,.12)",
+                    border: "1px solid rgba(147,197,253,.22)",
+                    color: "#bfdbfe",
+                    textDecoration: "none",
+                    lineHeight: 1.35,
+                    width: "fit-content",
+                    maxWidth: "100%"
+                  }}
+                >
+                  <span style={{ fontSize: "18px", lineHeight: 1 }}>☎️</span>
+                  <span style={{ fontSize: "14px", fontWeight: 800 }}>095/8832003</span>
+                </a>
+
+                <a
+                href="https://search.google.com/local/writereview?placeid=ChIJC7s6Ncf9ExMRXXn1PUbB5R8"
+                target="_blank"
+                rel="noreferrer"
+                aria-label="Lascia una recensione Google"
                 style={{
-                  width: "100%",
-                  border: "none",
-                  borderRadius: "16px",
-                  padding: "16px",
-                  background: "#25D366",
-                  color: "white",
-                  fontWeight: "bold",
-                  fontSize: "17px",
-                  cursor: "pointer",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "9px",
+                  flexWrap: "wrap",
+                  margin: "4px 0 0",
+                  padding: "8px 12px",
+                  borderRadius: "999px",
+                  background: "rgba(255,255,255,.06)",
+                  border: "1px solid rgba(255,255,255,.12)",
+                  color: "#e5e7eb",
+                  textDecoration: "none",
+                  width: "fit-content",
+                  maxWidth: "100%"
                 }}
               >
-                Scrivici su WhatsApp
-              </button>
+                <span
+                  style={{
+                    color: "#fbbc04",
+                    fontWeight: 900,
+                    letterSpacing: "1px",
+                    fontSize: "15px",
+                    lineHeight: 1
+                  }}
+                >
+                  ★★★★★
+                </span>
+                <span style={{ fontSize: "14px", fontWeight: 800 }}>
+                  Google
+                </span>
+                <span style={{ color: "#93c5fd", fontSize: "14px", fontWeight: 700 }}>
+                  Lascia una recensione
+                </span>
+              </a>
+              </div>
+              </div>
             </section>
 
             <section className="sa-support-guides sa-app-card" style={styles.card}>
@@ -2546,26 +2606,27 @@ export default function CustomerPage() {
               </section>
 
               <section className="sa-support-secondary sa-app-card" style={{ ...styles.card, ...styles.compactContactCard }}>
-                <h2 style={{ margin: "0 0 10px", fontSize: "25px" }}>📞 Contatti utili</h2>
-                <p style={{ color: "#cbd5e1", lineHeight: 1.45, margin: "0 0 14px" }}>
-                  Salva questa WebApp nella schermata Home per ritrovare assistenza, garanzia e consigli.
+                <h2 style={{ margin: "0 0 10px", fontSize: "25px" }}>💬 Siamo qui per aiutarti</h2>
+                <p style={{ color: "#cbd5e1", lineHeight: 1.45, margin: 0 }}>
+                  Per supporto sul tuo dispositivo, configurazioni, backup, garanzia o consigli sugli accessori, usa i contatti utili del negozio oppure contattaci su WhatsApp.
                 </p>
-
                 <button
+                  type="button"
                   onClick={openWhatsApp}
                   style={{
                     width: "100%",
-                    border: "1px solid rgba(37,211,102,.45)",
+                    marginTop: "16px",
+                    border: "none",
                     borderRadius: "16px",
                     padding: "14px",
-                    background: "rgba(37,211,102,.12)",
-                    color: "#bbf7d0",
+                    background: "#25D366",
+                    color: "white",
                     fontWeight: "bold",
                     fontSize: "16px",
-                    cursor: "pointer",
+                    cursor: "pointer"
                   }}
                 >
-                  Chiedi informazioni
+                  Scrivici su WhatsApp
                 </button>
               </section>
             </div>
