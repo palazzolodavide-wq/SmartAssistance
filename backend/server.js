@@ -2770,6 +2770,82 @@ app.get("/api/users", async (req, res) => {
 });
 
 
+
+// PATCH_81_PRODUCTION_SOFT_ENDPOINT
+app.get("/api/users/:id/production-soft", async (req, res) => {
+  try {
+    const customerId = Number(req.params.id);
+
+    if (!Number.isInteger(customerId) || customerId <= 0) {
+      return res.status(400).json({
+        success: false,
+        error: "ID cliente non valido"
+      });
+    }
+
+    const customerCheck = await pool.query(
+      `SELECT id FROM users WHERE id = $1 LIMIT 1`,
+      [customerId]
+    );
+
+    if (customerCheck.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: "Cliente non trovato"
+      });
+    }
+
+    const analyticsResult = await pool.query(
+      `
+      SELECT
+        COALESCE((SELECT COUNT(*)::INT FROM app_analytics_sessions WHERE customer_id = $1), 0) AS sessions_total,
+        COALESCE((SELECT COUNT(*)::INT FROM app_analytics_sessions WHERE customer_id = $1 AND last_seen_at >= NOW() - INTERVAL '2 minutes'), 0) AS online_now,
+        COALESCE((SELECT COUNT(*)::INT FROM app_analytics_sessions WHERE customer_id = $1 AND last_seen_at >= NOW() - INTERVAL '5 minutes'), 0) AS active_5m,
+        COALESCE((SELECT SUM(visits_count)::INT FROM app_analytics_sessions WHERE customer_id = $1), 0) AS session_visits_total,
+        (SELECT MIN(first_seen_at) FROM app_analytics_sessions WHERE customer_id = $1) AS first_seen_at,
+        (SELECT MAX(last_seen_at) FROM app_analytics_sessions WHERE customer_id = $1) AS last_seen_at,
+        COALESCE((SELECT COUNT(*)::INT FROM app_analytics_events WHERE customer_id = $1), 0) AS events_total,
+        COALESCE((SELECT COUNT(*)::INT FROM app_analytics_events WHERE customer_id = $1 AND event_type = 'visit'), 0) AS visits_total,
+        COALESCE((SELECT COUNT(*)::INT FROM app_analytics_events WHERE customer_id = $1 AND event_type = 'visit' AND created_at::DATE = CURRENT_DATE), 0) AS visits_today,
+        COALESCE((SELECT COUNT(*)::INT FROM app_analytics_events WHERE customer_id = $1 AND event_type = 'visit' AND created_at >= NOW() - INTERVAL '7 days'), 0) AS visits_7d,
+        COALESCE((SELECT COUNT(*)::INT FROM app_analytics_events WHERE customer_id = $1 AND event_type = 'activity'), 0) AS activity_total,
+        (SELECT MAX(created_at) FROM app_analytics_events WHERE customer_id = $1) AS last_event_at,
+        (SELECT MAX(created_at) FROM app_analytics_events WHERE customer_id = $1 AND event_type = 'visit') AS last_visit_at
+      `,
+      [customerId]
+    );
+
+    const recentSessionsResult = await pool.query(
+      `
+      SELECT
+        session_id,
+        page,
+        visits_count,
+        first_seen_at,
+        last_seen_at
+      FROM app_analytics_sessions
+      WHERE customer_id = $1
+      ORDER BY last_seen_at DESC NULLS LAST
+      LIMIT 5
+      `,
+      [customerId]
+    );
+
+    return res.json({
+      success: true,
+      customer_id: customerId,
+      analytics: analyticsResult.rows[0] || {},
+      recent_sessions: recentSessionsResult.rows || [],
+      generated_at: new Date().toISOString()
+    });
+  } catch (err) {
+    console.error("PATCH_81_PRODUCTION_SOFT_ENDPOINT ERROR:", err);
+    return res.status(500).json({
+      success: false,
+      error: "Errore riepilogo produzione cliente"
+    });
+  }
+});
 // PATCH_61_PRIVACY_EXPORT_ENDPOINT
 app.get("/api/users/:id/privacy-export", async (req, res) => {
   try {

@@ -116,6 +116,10 @@ const NAV_ITEMS = [
 export default function Home() {
   const [authReady, setAuthReady] = useState(false);
   const [activeSection, setActiveSection] = useState("dashboard");
+  // PATCH_81_PRODUCTION_SOFT_STATE
+  const [productionSoftByUser, setProductionSoftByUser] = useState({});
+  const [productionSoftLoadingByUser, setProductionSoftLoadingByUser] = useState({});
+
   const [loading, setLoading] = useState(true);
 
   const [users, setUsers] = useState([]);
@@ -1827,7 +1831,54 @@ export default function Home() {
   }
 
 
-  // PATCH_61_PRIVACY_EXPORT_FRONTEND
+  
+  // PATCH_81_PRODUCTION_SOFT_LOADER
+  async function loadProductionSoftSummary(user, options = {}) {
+    if (!user?.id) {
+      return;
+    }
+
+    const key = String(user.id);
+
+    if (!options.force && productionSoftByUser[key]?.success) {
+      return;
+    }
+
+    setProductionSoftLoadingByUser((prev) => ({ ...prev, [key]: true }));
+
+    try {
+      const res = await apiFetch(`${API_URL}/api/users/${user.id}/production-soft`);
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        setProductionSoftByUser((prev) => ({
+          ...prev,
+          [key]: {
+            success: false,
+            error: data.error || "Dati produzione cliente non disponibili"
+          }
+        }));
+        return;
+      }
+
+      setProductionSoftByUser((prev) => ({
+        ...prev,
+        [key]: data
+      }));
+    } catch (err) {
+      console.error("Errore produzione soft cliente", err);
+      setProductionSoftByUser((prev) => ({
+        ...prev,
+        [key]: {
+          success: false,
+          error: "Errore caricamento dati WebApp cliente"
+        }
+      }));
+    } finally {
+      setProductionSoftLoadingByUser((prev) => ({ ...prev, [key]: false }));
+    }
+  }
+// PATCH_61_PRIVACY_EXPORT_FRONTEND
   async function exportCustomerPrivacy(user) {
     if (!user?.id) {
       alert("Cliente non disponibile");
@@ -3702,6 +3753,99 @@ export default function Home() {
                                   <div className="customer-detail-box">
                                     <div>
                                       <div className="row-title">WebApp e contatti</div>
+
+                      {/* PATCH_81_PRODUCTION_SOFT_UI */}
+                      {(() => {
+                        const productionKey = String(user.id);
+                        const productionData = productionSoftByUser[productionKey] || {};
+                        const analytics = productionData.analytics || {};
+                        const loadingProduction = Boolean(productionSoftLoadingByUser[productionKey]);
+                        const hasProductionData = Boolean(productionData.success);
+                        const privacyOk = Boolean(user.privacy_consent);
+                        const marketingOk = Boolean(user.marketing_consent);
+                        const whatsappOk = Boolean(user.whatsapp_consent) && !Boolean(user.broadcast_opt_out);
+
+                        return (
+                          <div
+                            style={{
+                              marginTop: "12px",
+                              marginBottom: "12px",
+                              padding: "12px",
+                              borderRadius: "16px",
+                              border: "1px solid rgba(148,163,184,.22)",
+                              background: "rgba(15,23,42,.42)"
+                            }}
+                          >
+                            <div style={{ display: "flex", justifyContent: "space-between", gap: "10px", alignItems: "flex-start", flexWrap: "wrap" }}>
+                              <div>
+                                <div style={{ fontWeight: 800, color: "#e5e7eb" }}>Produzione soft</div>
+                                <div className="muted-text">
+                                  {hasProductionData
+                                    ? `Ultimo accesso WebApp: ${formatSystemDate(analytics.last_seen_at || analytics.last_event_at)}`
+                                    : productionData.error || "Premi Aggiorna per leggere accessi e visite del cliente."}
+                                </div>
+                              </div>
+
+                              <button
+                                type="button"
+                                onClick={() => loadProductionSoftSummary(user, { force: true })}
+                                disabled={loadingProduction}
+                                style={{
+                                  border: "1px solid rgba(147,197,253,.35)",
+                                  background: "rgba(37,99,235,.16)",
+                                  color: "#bfdbfe",
+                                  borderRadius: "999px",
+                                  padding: "8px 12px",
+                                  cursor: loadingProduction ? "not-allowed" : "pointer",
+                                  fontWeight: 800
+                                }}
+                              >
+                                {loadingProduction ? "Aggiorno..." : "Aggiorna dati WebApp"}
+                              </button>
+                            </div>
+
+                            <div
+                              style={{
+                                display: "grid",
+                                gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))",
+                                gap: "8px",
+                                marginTop: "12px"
+                              }}
+                            >
+                              <div className="quick-item" style={{ padding: "10px" }}>
+                                <div>
+                                  <div className="muted-text">Visite</div>
+                                  <div className="row-title">{formatInteger(analytics.visits_total || 0)}</div>
+                                </div>
+                              </div>
+                              <div className="quick-item" style={{ padding: "10px" }}>
+                                <div>
+                                  <div className="muted-text">7 giorni</div>
+                                  <div className="row-title">{formatInteger(analytics.visits_7d || 0)}</div>
+                                </div>
+                              </div>
+                              <div className="quick-item" style={{ padding: "10px" }}>
+                                <div>
+                                  <div className="muted-text">Sessioni</div>
+                                  <div className="row-title">{formatInteger(analytics.sessions_total || 0)}</div>
+                                </div>
+                              </div>
+                              <div className="quick-item" style={{ padding: "10px" }}>
+                                <div>
+                                  <div className="muted-text">Stato</div>
+                                  <div className="row-title">{Number(analytics.online_now || 0) > 0 ? "Online" : Number(analytics.active_5m || 0) > 0 ? "Attivo" : "Offline"}</div>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginTop: "12px" }}>
+                              <span className={privacyOk ? "badge badge-green" : "badge badge-red"}>Privacy {privacyOk ? "OK" : "NO"}</span>
+                              <span className={marketingOk ? "badge badge-green" : "badge"}>Marketing {marketingOk ? "OK" : "NO"}</span>
+                              <span className={whatsappOk ? "badge badge-green" : "badge"}>WhatsApp {whatsappOk ? "OK" : "NO"}</span>
+                            </div>
+                          </div>
+                        );
+                      })()}
                                       <div className="action-row customer-detail-actions">
                                         {user.app_token ? (
                                           <>
