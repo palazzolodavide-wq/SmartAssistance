@@ -28,12 +28,14 @@ services:
 
     environment:
       SA_BACKUP_ROOT: /smart-assistance-backups
+      SA_FLYER_STORAGE_ROOT: /storage/flyers
 
-    command: sh -c "npm install && npm start"
+    command: sh -c "apk add --no-cache poppler-utils fontconfig ttf-dejavu ttf-liberation && fc-cache -f && npm install && npm start"
 
     volumes:
       - ./backend:/app
       - ./backups:/smart-assistance-backups:ro
+      - ./storage:/storage:rw
 
       - "./backups/password-reset:/password-reset:rw"
     ports:
@@ -81,3 +83,7 @@ services:
 volumes:
   caddy_data:
   caddy_config:
+
+# PATCH_84A1_FLYER_STORAGE
+
+# PATCH_84A1_FIX3_PDF_FONTS

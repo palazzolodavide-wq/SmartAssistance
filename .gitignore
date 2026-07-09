@@ -98,3 +98,10 @@ tools/rclone/
 # Smart Assistance local runtime reset links and patch backups
 backups/password-reset/
 *.bak_patch*
+# PATCH_84A1_FLYER_STORAGE_IGNORE
+/storage/flyers/originals/*
+/storage/flyers/pages/*
+/storage/flyers/tmp/*
+!/storage/flyers/originals/.gitkeep
+!/storage/flyers/pages/.gitkeep
+!/storage/flyers/tmp/.gitkeep
