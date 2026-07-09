@@ -804,6 +804,30 @@ export default function CustomerPage() {
     }
   }
 
+  // PATCH_82B_GUIDE_ICON_NORMALIZER
+  function getGuideIcon(rawIcon) {
+    const value = String(rawIcon || "").trim();
+    if (!value) return "💡";
+
+    const normalized = value.toLowerCase();
+
+    const iconMap = {
+      backup: "💾",
+      whatsapp: "💬",
+      smartphone: "📱",
+      storage: "🧹",
+      battery: "🔋",
+      warranty: "🧾",
+      notebook: "💻",
+      security: "🛡️",
+      accessori: "🔌",
+      assistenza: "🛠️",
+      guide: "📚",
+      privacy: "🔐"
+    };
+
+    return iconMap[normalized] || value;
+  }
   function openWhatsApp() {
     const message = encodeURIComponent(
       `Ciao, ho bisogno di assistenza per ${deviceName || "il mio dispositivo"}.`
@@ -1163,6 +1187,10 @@ export default function CustomerPage() {
       justifyContent: "center",
       alignItems: "center",
       fontSize: "22px",
+      lineHeight: 1,
+      overflow: "hidden",
+      textOverflow: "clip",
+      flexShrink: 0,
     },
     guideText: {
       margin: "6px 0 0",
@@ -1904,6 +1932,7 @@ export default function CustomerPage() {
             grid-template-columns: repeat(2, minmax(0, 1fr));
           }
 
+          /* PATCH_82B_HELP_DESKTOP_LAYOUT */
           .sa-support-grid {
             grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
             align-items: start;
@@ -1911,21 +1940,27 @@ export default function CustomerPage() {
 
           .sa-support-main {
             grid-column: 1 / -1;
-          }
-
-          .sa-support-guides {
-            grid-column: 1;
+            order: 1;
           }
 
           .sa-support-side-stack {
-            grid-column: 2;
+            grid-column: 1 / -1;
+            order: 2;
             align-self: start;
+            display: grid !important;
+            grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+            gap: 18px;
+          }
+
+          .sa-support-guides {
+            grid-column: 1 / -1;
+            order: 3;
           }
 
           .sa-support-side,
           .sa-support-secondary {
             grid-column: auto;
-            align-self: auto;
+            align-self: stretch;
           }
 
           .sa-nav {
@@ -2490,7 +2525,7 @@ export default function CustomerPage() {
                 ) : (
                   data.guides.map((guide) => (
                     <div key={guide.id || guide.title} style={styles.guideCard}>
-                      <div style={styles.guideIcon}>{guide.icon || "💡"}</div>
+                      <div style={styles.guideIcon}>{getGuideIcon(guide.icon)}</div>
                       <div>
                         <strong>{guide.title}</strong>
                         <p style={styles.guideText}>
