@@ -127,6 +127,8 @@ export default function CustomerPage() {
   const [receiptViewer, setReceiptViewer] = useState(null);
   const [liveLoading, setLiveLoading] = useState(false);
   const [showConsentSettings, setShowConsentSettings] = useState(false);
+  // PATCH_83_COMPACT_GUIDES_STATE
+  const [showAllGuides, setShowAllGuides] = useState(false);
   const [consentSaving, setConsentSaving] = useState(false);
   const [consentMessage, setConsentMessage] = useState("");
 
@@ -828,6 +830,27 @@ export default function CustomerPage() {
 
     return iconMap[normalized] || value;
   }
+  // PATCH_83_GUIDE_PREVIEW_HELPERS
+  function getGuidePreview(text) {
+    const value = String(text || "").trim();
+
+    if (!value) {
+      return "";
+    }
+
+    const firstParagraph = value.split(/\n+/)[0].trim();
+
+    if (firstParagraph.length <= 170) {
+      return firstParagraph;
+    }
+
+    return `${firstParagraph.slice(0, 167).trim()}...`;
+  }
+
+  function hasGuideDetails(text) {
+    const value = String(text || "").trim();
+    return value.length > getGuidePreview(value).length;
+  }
   function openWhatsApp() {
     const message = encodeURIComponent(
       `Ciao, ho bisogno di assistenza per ${deviceName || "il mio dispositivo"}.`
@@ -1168,6 +1191,21 @@ export default function CustomerPage() {
       borderColor: "#60a5fa",
       color: "#ffffff",
     },
+    // PATCH_83_COMPACT_GUIDES_STYLES
+    guidesList: {
+      display: "grid",
+      gap: "12px",
+      gridTemplateColumns: "1fr",
+    },
+    guidesToggleButton: {
+      border: "1px solid rgba(147,197,253,.35)",
+      borderRadius: "16px",
+      padding: "13px 14px",
+      background: "rgba(37,99,235,.16)",
+      color: "#bfdbfe",
+      fontWeight: "bold",
+      cursor: "pointer",
+    },
     guideCard: {
       display: "flex",
       gap: "12px",
@@ -1175,7 +1213,7 @@ export default function CustomerPage() {
       background: "rgba(255,255,255,.06)",
       border: "1px solid rgba(255,255,255,.08)",
       borderRadius: "16px",
-      padding: "14px",
+      padding: "12px",
     },
     guideIcon: {
       width: "42px",
@@ -1196,7 +1234,24 @@ export default function CustomerPage() {
       margin: "6px 0 0",
       color: "#cbd5e1",
       fontSize: "13px",
+      lineHeight: 1.4,
+    },
+    guideDetails: {
+      marginTop: "8px",
+    },
+    guideDetailsSummary: {
+      color: "#93c5fd",
+      fontSize: "13px",
+      fontWeight: "bold",
+      cursor: "pointer",
+      listStyle: "none",
+    },
+    guideDetailsText: {
+      margin: "8px 0 0",
+      color: "#cbd5e1",
+      fontSize: "13px",
       lineHeight: 1.45,
+      whiteSpace: "pre-line",
     },
     preferenceToggle: {
       display: "flex",
@@ -1963,6 +2018,15 @@ export default function CustomerPage() {
             align-self: stretch;
           }
 
+          /* PATCH_83_GUIDES_DESKTOP_GRID */
+          .sa-guides-list {
+            grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+          }
+
+          .sa-guides-more-button {
+            grid-column: 1 / -1;
+          }
+
           .sa-nav {
             max-width: 760px !important;
             bottom: 18px !important;
@@ -2514,26 +2578,52 @@ export default function CustomerPage() {
             <section className="sa-support-guides sa-app-card" style={styles.card}>
               <h2 style={{ marginTop: 0 }}>📚 Guide rapide</h2>
               <p style={{ color: "#cbd5e1", lineHeight: 1.5 }}>
-                Piccoli consigli utili per usare meglio il tuo smartphone ogni giorno.
+                Consigli rapidi per usare meglio i tuoi dispositivi, proteggere i dati e prepararti all'assistenza.
               </p>
 
-              <div style={{ display: "grid", gap: "12px" }}>
+              <div className="sa-guides-list" style={styles.guidesList}>
                 {(data.guides || []).length === 0 ? (
                   <div style={{ color: "#94a3b8", lineHeight: 1.5 }}>
                     Nessuna guida disponibile al momento.
                   </div>
                 ) : (
-                  data.guides.map((guide) => (
-                    <div key={guide.id || guide.title} style={styles.guideCard}>
-                      <div style={styles.guideIcon}>{getGuideIcon(guide.icon)}</div>
-                      <div>
-                        <strong>{guide.title}</strong>
-                        <p style={styles.guideText}>
-                          {guide.description}
-                        </p>
+                  <>
+                    {(showAllGuides ? (data.guides || []) : (data.guides || []).slice(0, 4)).map((guide) => (
+                      <div key={guide.id || guide.title} style={styles.guideCard}>
+                        <div style={styles.guideIcon}>{getGuideIcon(guide.icon)}</div>
+                        <div style={{ minWidth: 0 }}>
+                          <strong>{guide.title}</strong>
+                          <p style={styles.guideText}>
+                            {getGuidePreview(guide.description)}
+                          </p>
+
+                          {hasGuideDetails(guide.description) && (
+                            <details style={styles.guideDetails}>
+                              <summary style={styles.guideDetailsSummary}>
+                                Leggi guida completa
+                              </summary>
+                              <p style={styles.guideDetailsText}>
+                                {guide.description}
+                              </p>
+                            </details>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  ))
+                    ))}
+
+                    {(data.guides || []).length > 4 && (
+                      <button
+                        type="button"
+                        className="sa-guides-more-button"
+                        onClick={() => setShowAllGuides(!showAllGuides)}
+                        style={styles.guidesToggleButton}
+                      >
+                        {showAllGuides
+                          ? "Mostra meno guide"
+                          : `Mostra altre ${(data.guides || []).length - 4} guide`}
+                      </button>
+                    )}
+                  </>
                 )}
               </div>
             </section>
