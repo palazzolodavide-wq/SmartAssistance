@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef} from "react"; // PATCH_84A2D_FIX2_USE_REF_IMPORT
 import { useParams } from "next/navigation";
 
 const WHATSAPP_NUMBER = "393297655557";
@@ -12,7 +12,7 @@ export default function CustomerPage() {
   function getValidTab(value) {
     const tabName = String(value || "").toLowerCase().trim();
 
-    return ["home", "offers", "live", "devices", "support"].includes(tabName)
+    return ["home", "flyer", "offers", "live", "devices", "support"].includes(tabName) // PATCH_84A2B_FLYER_VALID_TAB
       ? tabName
       : "home";
   }
@@ -104,11 +104,18 @@ export default function CustomerPage() {
       ttl_hours: 24,
       max_visible: 20,
     },
+    // PATCH_84A2B_FLYER_INITIAL_DATA
+    flyer: {
+      available: false,
+      pages: [],
+      page_count: 0,
+    },
   });
 
   const canShowMarketingOffers = Boolean(data.customer?.marketing_consent);
   const navItems = [
     { id: "home", icon: "🏠", label: "Home" },
+    ...(data.flyer?.available ? [{ id: "flyer", icon: "\uD83D\uDCF0", label: "Volantino" }] : []), // PATCH_84A2B_FLYER_NAV_ITEM
     ...(canShowMarketingOffers ? [{ id: "offers", icon: "🎁", label: "Per te" }] : []),
     ...(canShowMarketingOffers && data.liveSettings?.enabled !== false
       ? [{ id: "live", icon: "🔥", label: "Live" }]
@@ -131,6 +138,35 @@ export default function CustomerPage() {
   const [showAllGuides, setShowAllGuides] = useState(false);
   const [consentSaving, setConsentSaving] = useState(false);
   const [consentMessage, setConsentMessage] = useState("");
+  // PATCH_84A2B_FLYER_STATE
+  const [flyerPage, setFlyerPage] = useState(1);
+  const [flyerTouchStartX, setFlyerTouchStartX] = useState(null);
+  // PATCH_84A2C_FLYER_ZOOM_STATE
+  const [flyerZoom, setFlyerZoom] = useState(1);
+  const [flyerFullscreen, setFlyerFullscreen] = useState(false);
+  // PATCH_84A2D_FIX2_PINCH_REFS
+  const flyerPinchStartDistanceRef = useRef(null);
+  const flyerPinchStartZoomRef = useRef(1);
+  const flyerIsPinchingRef = useRef(false);
+  // PATCH_84A2E_DRAG_REFS
+  const flyerMouseDragRef = useRef({
+    active: false,
+    startX: 0,
+    startY: 0,
+    scrollLeft: 0,
+    scrollTop: 0,
+  });
+
+  const flyerPages = data.flyer?.pages || [];
+  const flyerPageCount = Number(data.flyer?.page_count || flyerPages.length || 0);
+  const safeFlyerPage = Math.min(
+    Math.max(Number(flyerPage) || 1, 1),
+    Math.max(flyerPageCount, 1)
+  );
+  const activeFlyerPage =
+    flyerPages.find((page) => Number(page.page_number) === safeFlyerPage) ||
+    flyerPages[safeFlyerPage - 1] ||
+    null;
 
   // PATCH_64_4_WEBAPP_HEARTBEAT_HELPER
   function getSaAnalyticsSessionId() {
@@ -206,6 +242,31 @@ export default function CustomerPage() {
           max_visible: 20,
         };
 
+        // PATCH_84A2B_FLYER_LOAD
+        let flyer = {
+          available: false,
+          pages: [],
+          page_count: 0,
+        };
+
+        try {
+          const flyerRes = await fetch(`/api/app/${token}/flyer?v=${Date.now()}`, {
+            cache: "no-store",
+          });
+
+          const flyerJson = await flyerRes.json();
+
+          if (flyerRes.ok && flyerJson.success !== false) {
+            flyer = flyerJson.flyer || flyer;
+          }
+        } catch (flyerErr) {
+          flyer = {
+            available: false,
+            pages: [],
+            page_count: 0,
+          };
+        }
+
         if (
           initialNavigation.tab === "live" &&
           liveSettings?.enabled !== false &&
@@ -234,12 +295,16 @@ export default function CustomerPage() {
           liveOffers,
           livePagination,
           liveSettings,
+          // PATCH_84A2B_FLYER_SETDATA
+          flyer,
         });
 
         const requestedTab = initialNavigation.tab;
         const nextTab =
           (!Boolean(json.customer?.marketing_consent) && ["offers", "live"].includes(requestedTab)) ||
-          (liveSettings?.enabled === false && requestedTab === "live")
+          (liveSettings?.enabled === false && requestedTab === "live") ||
+          // PATCH_84A2B_FLYER_TAB_FALLBACK
+          (!flyer.available && requestedTab === "flyer")
             ? "home"
             : requestedTab;
 
@@ -256,6 +321,18 @@ export default function CustomerPage() {
       load();
     }
   }, [token]);
+
+  // PATCH_84A2B_FLYER_RESET_EFFECT
+  useEffect(() => {
+    setFlyerPage(1);
+    // PATCH_84A2C_FLYER_ZOOM_RESET_ON_FLYER
+    setFlyerZoom(1);
+    setFlyerFullscreen(false);
+    // PATCH_84A2D_FIX2_RESET_REFS
+    flyerPinchStartDistanceRef.current = null;
+    flyerPinchStartZoomRef.current = 1;
+    flyerIsPinchingRef.current = false;
+  }, [data.flyer?.id]);
 
   // PATCH_64_4_WEBAPP_HEARTBEAT_EFFECT
   useEffect(() => {
@@ -940,6 +1017,223 @@ export default function CustomerPage() {
     selectTab("support");
   }
 
+  // PATCH_84A2B_FLYER_HELPERS
+  function goToFlyerPage(nextPage) {
+    const maxPage = Math.max(flyerPageCount, 1);
+    const value = Math.min(Math.max(Number(nextPage) || 1, 1), maxPage);
+    setFlyerPage(value);
+  }
+
+  function handleFlyerTouchStart(event) {
+    const touch = event.touches?.[0];
+
+    if (!touch) {
+      return;
+    }
+
+    setFlyerTouchStartX(touch.clientX);
+  }
+
+  function handleFlyerTouchEnd(event) {
+    if (flyerTouchStartX === null) {
+      return;
+    }
+
+    const touch = event.changedTouches?.[0];
+
+    if (!touch) {
+      setFlyerTouchStartX(null);
+      return;
+    }
+
+    const delta = touch.clientX - flyerTouchStartX;
+
+    if (Math.abs(delta) > 45) {
+      if (delta < 0) {
+        goToFlyerPage(safeFlyerPage + 1);
+      } else {
+        goToFlyerPage(safeFlyerPage - 1);
+      }
+    }
+
+    setFlyerTouchStartX(null);
+  }
+
+  // PATCH_84A2C_FLYER_ZOOM_HELPERS
+  // PATCH_84A2D_FIX2_NATURAL_ZOOM_HELPERS
+  function getFlyerTouchDistance(touches) {
+    if (!touches || touches.length < 2) {
+      return null;
+    }
+
+    const first = touches[0];
+    const second = touches[1];
+    const dx = first.clientX - second.clientX;
+    const dy = first.clientY - second.clientY;
+
+    return Math.sqrt((dx * dx) + (dy * dy));
+  }
+
+  function setFlyerZoomSafe(value) {
+    const next = Math.min(3.5, Math.max(1, Number(value) || 1));
+    setFlyerZoom(Math.round(next * 100) / 100);
+  }
+
+  function changeFlyerZoom(delta) {
+    setFlyerZoom((current) => {
+      const next = Math.min(3.5, Math.max(1, (Number(current) || 1) + delta));
+      return Math.round(next * 100) / 100;
+    });
+  }
+
+  function handleFlyerWheel(event) {
+    if (!event) return;
+    event.preventDefault();
+
+    const step = event.deltaY < 0 ? 0.14 : -0.14;
+    changeFlyerZoom(step);
+  }
+
+  function handleFlyerTouchStart(event) {
+    const touches = event.touches;
+
+    if (touches && touches.length >= 2) {
+      const distance = getFlyerTouchDistance(touches);
+
+      if (distance) {
+        flyerIsPinchingRef.current = true;
+        flyerPinchStartDistanceRef.current = distance;
+        flyerPinchStartZoomRef.current = flyerZoom;
+        setFlyerTouchStartX(null);
+      }
+
+      return;
+    }
+
+    const touch = touches?.[0];
+
+    if (!touch) return;
+
+    flyerIsPinchingRef.current = false;
+    setFlyerTouchStartX(touch.clientX);
+  }
+
+  function handleFlyerTouchMove(event) {
+    const touches = event.touches;
+
+    if (!touches || touches.length < 2) {
+      return;
+    }
+
+    const distance = getFlyerTouchDistance(touches);
+    const startDistance = flyerPinchStartDistanceRef.current;
+
+    if (!distance || !startDistance) {
+      return;
+    }
+
+    if (event.cancelable) {
+      event.preventDefault();
+    }
+
+    const ratio = distance / startDistance;
+    setFlyerZoomSafe(flyerPinchStartZoomRef.current * ratio);
+  }
+
+  function handleFlyerTouchEnd(event) {
+    if (flyerIsPinchingRef.current) {
+      if (!event.touches || event.touches.length < 2) {
+        flyerIsPinchingRef.current = false;
+        flyerPinchStartDistanceRef.current = null;
+        flyerPinchStartZoomRef.current = flyerZoom;
+      }
+
+      setFlyerTouchStartX(null);
+      return;
+    }
+
+    if (flyerTouchStartX === null) {
+      return;
+    }
+
+    const touch = event.changedTouches?.[0];
+
+    if (!touch) {
+      setFlyerTouchStartX(null);
+      return;
+    }
+
+    const delta = touch.clientX - flyerTouchStartX;
+
+    if (Math.abs(delta) > 45 && flyerZoom <= 1.05) {
+      if (delta < 0) {
+        goToFlyerPage(safeFlyerPage + 1);
+      } else {
+        goToFlyerPage(safeFlyerPage - 1);
+      }
+    }
+
+    setFlyerTouchStartX(null);
+  }
+
+  // PATCH_84A2E_DRAG_HELPERS
+  function handleFlyerMouseDown(event) {
+    if (!event || event.button !== 0) {
+      return;
+    }
+
+    const target = event.currentTarget;
+
+    flyerMouseDragRef.current = {
+      active: true,
+      startX: event.clientX,
+      startY: event.clientY,
+      scrollLeft: target.scrollLeft,
+      scrollTop: target.scrollTop,
+    };
+
+    target.style.cursor = "grabbing";
+    event.preventDefault();
+  }
+
+  function handleFlyerMouseMove(event) {
+    const drag = flyerMouseDragRef.current;
+
+    if (!drag?.active) {
+      return;
+    }
+
+    const target = event.currentTarget;
+    const dx = event.clientX - drag.startX;
+    const dy = event.clientY - drag.startY;
+
+    target.scrollLeft = drag.scrollLeft - dx;
+    target.scrollTop = drag.scrollTop - dy;
+    event.preventDefault();
+  }
+
+  function endFlyerMouseDrag(event) {
+    flyerMouseDragRef.current = {
+      active: false,
+      startX: 0,
+      startY: 0,
+      scrollLeft: 0,
+      scrollTop: 0,
+    };
+
+    if (event?.currentTarget) {
+      event.currentTarget.style.cursor = flyerZoom > 1.05 ? "grab" : "zoom-in";
+    }
+  }
+
+  function openFlyerFullscreen() {
+    setFlyerFullscreen(true);
+  }
+
+  function closeFlyerFullscreen() {
+    setFlyerFullscreen(false);
+    setFlyerZoomSafe(1);
+  }
   function openReceipt(device) {
     if (!device?.receipt_data_url) {
       return;
@@ -1123,6 +1417,131 @@ export default function CustomerPage() {
       padding: "16px",
       marginBottom: "16px",
       boxShadow: "0 10px 28px rgba(0,0,0,.22)",
+    },
+    // PATCH_84A2B_FLYER_STYLES
+    flyerCard: {
+      background: "#111827",
+      border: "1px solid rgba(255,255,255,.08)",
+      borderRadius: "24px",
+      padding: "14px",
+      boxShadow: "0 10px 28px rgba(0,0,0,.22)",
+    },
+    // PATCH_84A2D_FIX2_IMAGE_STYLES
+    flyerImageWrap: {
+      background: "#020617",
+      border: "1px solid rgba(255,255,255,.10)",
+      borderRadius: "20px",
+      padding: "8px",
+      minHeight: "min(64vh, 620px)",
+      maxHeight: "72vh",
+      display: "flex",
+      alignItems: "flex-start",
+      justifyContent: "center",
+      overflow: "auto",
+      overscrollBehavior: "contain",
+      scrollbarWidth: "none",
+      msOverflowStyle: "none",
+      touchAction: "pan-x pan-y",
+      cursor: flyerZoom > 1.05 ? "grab" : "zoom-in",
+      // PATCH_84A2E_SCROLLBAR_STYLE_MAIN
+    },
+    flyerImageCanvas: {
+      width: "auto",
+      maxWidth: "none",
+      aspectRatio: "822 / 879",
+      borderRadius: "14px",
+      backgroundColor: "#ffffff",
+      backgroundRepeat: "no-repeat",
+      backgroundPosition: "center top",
+      backgroundSize: "contain",
+      display: "block",
+      flexShrink: 0,
+    },
+    flyerZoomBar: {
+      display: "flex",
+      justifyContent: "center",
+      alignItems: "center",
+      gap: "8px",
+      flexWrap: "wrap",
+      marginTop: "12px",
+    },
+    flyerSmallButton: {
+      border: "1px solid rgba(147,197,253,.35)",
+      borderRadius: "14px",
+      padding: "10px 12px",
+      background: "rgba(37,99,235,.16)",
+      color: "#bfdbfe",
+      fontWeight: "bold",
+      cursor: "pointer",
+    },
+    flyerFullscreenOverlay: {
+      position: "fixed",
+      inset: 0,
+      zIndex: 9998,
+      background: "#020617",
+      color: "#f8fafc",
+      display: "flex",
+      flexDirection: "column",
+    },
+    flyerFullscreenToolbar: {
+      minHeight: "62px",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: "10px",
+      padding: "10px 12px",
+      background: "rgba(15,23,42,.98)",
+      borderBottom: "1px solid rgba(255,255,255,.12)",
+      flexWrap: "wrap",
+    },
+    // PATCH_84A2D_FIX2_FULLSCREEN_STYLES
+    flyerFullscreenStage: {
+      flex: 1,
+      minHeight: 0,
+      overflow: "auto",
+      overscrollBehavior: "contain",
+      scrollbarWidth: "none",
+      msOverflowStyle: "none",
+      padding: "12px",
+      // PATCH_84A2E_SCROLLBAR_STYLE_FULLSCREEN
+      display: "flex",
+      alignItems: "flex-start",
+      justifyContent: "center",
+      touchAction: "pan-x pan-y",
+    },
+    flyerFullscreenCanvas: {
+      width: "auto",
+      maxWidth: "none",
+      aspectRatio: "822 / 879",
+      borderRadius: "14px",
+      backgroundColor: "#ffffff",
+      backgroundRepeat: "no-repeat",
+      backgroundPosition: "center top",
+      backgroundSize: "contain",
+      flexShrink: 0,
+      boxShadow: "0 18px 50px rgba(0,0,0,.45)",
+    },
+    flyerControls: {
+      display: "grid",
+      gridTemplateColumns: "1fr auto 1fr",
+      alignItems: "center",
+      gap: "10px",
+      marginTop: "14px",
+    },
+    flyerControlButton: {
+      border: "1px solid rgba(147,197,253,.35)",
+      borderRadius: "16px",
+      padding: "13px 14px",
+      background: "rgba(37,99,235,.16)",
+      color: "#bfdbfe",
+      fontWeight: "bold",
+      cursor: "pointer",
+    },
+    flyerCounter: {
+      color: "#e2e8f0",
+      fontWeight: "bold",
+      fontSize: "14px",
+      whiteSpace: "nowrap",
     },
     sectionTitle: {
       margin: "22px 0 12px",
@@ -1625,7 +2044,100 @@ export default function CustomerPage() {
   if (error) {
     return (
       <main style={styles.page}>
-        <div className="sa-shell" style={styles.shell}>
+        {flyerFullscreen && activeFlyerPage && (
+        <section
+          data-sa-flyer-fullscreen="true"
+          style={styles.flyerFullscreenOverlay}
+        >
+          <div style={styles.flyerFullscreenToolbar}>
+            <button
+              type="button"
+              onClick={closeFlyerFullscreen}
+              style={styles.receiptBackButton}
+            >
+              Chiudi
+            </button>
+
+            <div style={{ minWidth: 0, flex: 1, textAlign: "center" }}>
+              <strong style={{ display: "block" }}>
+                {data.flyer?.title || "Volantino"}
+              </strong>
+              <span style={{ color: "#94a3b8", fontSize: "13px" }}>
+                Pagina {safeFlyerPage} / {flyerPageCount}
+              </span>
+            </div>
+
+            <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
+              <button type="button" onClick={() => changeFlyerZoom(-0.2)} style={styles.flyerSmallButton}>-</button>
+              <strong style={styles.flyerCounter}>{Math.round(flyerZoom * 100)}%</strong>
+              <button type="button" onClick={() => changeFlyerZoom(0.2)} style={styles.flyerSmallButton}>+</button>
+              <button type="button" onClick={() => setFlyerZoomSafe(1)} style={styles.flyerSmallButton}>Reset</button>
+            </div>
+          </div>
+
+          <div
+            className="sa-flyer-fullscreen-stage"
+            style={styles.flyerFullscreenStage}
+            onWheel={handleFlyerWheel}
+            onMouseDown={handleFlyerMouseDown}
+            onMouseMove={handleFlyerMouseMove}
+            onMouseUp={endFlyerMouseDrag}
+            onMouseLeave={endFlyerMouseDrag}
+            onTouchStart={handleFlyerTouchStart}
+            onTouchMove={handleFlyerTouchMove}
+            onTouchEnd={handleFlyerTouchEnd}
+          >
+            {/* PATCH_84A2D_FIX2_FULLSCREEN_EVENTS */}
+            {/* PATCH_84A2E_FULLSCREEN_DRAG_EVENTS */}
+            <div
+              className="sa-flyer-image-canvas"
+              role="img"
+              aria-label={`Volantino pagina ${safeFlyerPage}`}
+              onContextMenu={(event) => event.preventDefault()}
+              style={{
+                ...styles.flyerFullscreenCanvas,
+                // PATCH_84A2D_FIX2_FULLSCREEN_FIT_SIZE
+                width: `calc(min(82vh, 1000px, 98vw) * 0.935 * ${flyerZoom})`,
+                height: `calc(min(82vh, 1000px, 98vw) * ${flyerZoom})`,
+                backgroundImage: `url("${activeFlyerPage.image_url}")`,
+              }}
+            />
+          </div>
+
+          <div style={{ ...styles.flyerFullscreenToolbar, justifyContent: "center" }}>
+            <button
+              type="button"
+              onClick={() => goToFlyerPage(safeFlyerPage - 1)}
+              disabled={safeFlyerPage <= 1}
+              style={{
+                ...styles.flyerControlButton,
+                width: "auto",
+                opacity: safeFlyerPage <= 1 ? 0.45 : 1,
+                cursor: safeFlyerPage <= 1 ? "not-allowed" : "pointer",
+              }}
+            >
+              Precedente
+            </button>
+
+            <button
+              type="button"
+              onClick={() => goToFlyerPage(safeFlyerPage + 1)}
+              disabled={safeFlyerPage >= flyerPageCount}
+              style={{
+                ...styles.flyerControlButton,
+                width: "auto",
+                opacity: safeFlyerPage >= flyerPageCount ? 0.45 : 1,
+                cursor: safeFlyerPage >= flyerPageCount ? "not-allowed" : "pointer",
+              }}
+            >
+              Successiva
+            </button>
+          </div>
+        </section>
+      )}
+      {/* PATCH_84A2C_FLYER_FULLSCREEN_OVERLAY */}
+
+      <div className="sa-shell" style={styles.shell}>
           <div className="sa-app-card" style={styles.card}>
             <h2>Impossibile caricare la WebApp</h2>
             <p>{error}</p>
@@ -1679,6 +2191,32 @@ export default function CustomerPage() {
         }
 
         .sa-filter-bar-mobile-helper {
+          display: none;
+        }
+
+        /* PATCH_84A2D_FIX2_CSS */
+        .sa-flyer-image-canvas {
+          user-select: none;
+          -webkit-user-select: none;
+          -webkit-touch-callout: none;
+          touch-action: pan-x pan-y;
+        }
+
+        .sa-flyer-fullscreen-stage {
+          overscroll-behavior: contain;
+        }
+
+        /* PATCH_84A2E_SCROLLBAR_CSS */
+        .sa-flyer-scroll-stage,
+        .sa-flyer-fullscreen-stage {
+          scrollbar-width: none;
+          -ms-overflow-style: none;
+        }
+
+        .sa-flyer-scroll-stage::-webkit-scrollbar,
+        .sa-flyer-fullscreen-stage::-webkit-scrollbar {
+          width: 0;
+          height: 0;
           display: none;
         }
 
@@ -1802,6 +2340,74 @@ export default function CustomerPage() {
           margin-bottom: 16px;
         }
 
+        /* PATCH_84A2B_FLYER_CSS */
+        .sa-flyer-page img {
+          user-select: none;
+          -webkit-user-drag: none;
+        }
+
+        /* PATCH_84A2C_FLYER_CSS_UPGRADE */
+        .sa-flyer-image-canvas {
+          user-select: none;
+          -webkit-user-select: none;
+          -webkit-touch-callout: none;
+        }
+
+        .sa-flyer-fullscreen-stage {
+          overscroll-behavior: contain;
+        }
+
+        /* PATCH_84A2E_SCROLLBAR_CSS */
+        .sa-flyer-scroll-stage,
+        .sa-flyer-fullscreen-stage {
+          scrollbar-width: none;
+          -ms-overflow-style: none;
+        }
+
+        .sa-flyer-scroll-stage::-webkit-scrollbar,
+        .sa-flyer-fullscreen-stage::-webkit-scrollbar {
+          width: 0;
+          height: 0;
+          display: none;
+        }
+
+        /* PATCH_84A2D_FIX2_CSS */
+        .sa-flyer-image-canvas {
+          user-select: none;
+          -webkit-user-select: none;
+          -webkit-touch-callout: none;
+          touch-action: pan-x pan-y;
+        }
+
+        .sa-flyer-fullscreen-stage {
+          overscroll-behavior: contain;
+        }
+
+        /* PATCH_84A2E_SCROLLBAR_CSS */
+        .sa-flyer-scroll-stage,
+        .sa-flyer-fullscreen-stage {
+          scrollbar-width: none;
+          -ms-overflow-style: none;
+        }
+
+        .sa-flyer-scroll-stage::-webkit-scrollbar,
+        .sa-flyer-fullscreen-stage::-webkit-scrollbar {
+          width: 0;
+          height: 0;
+          display: none;
+        }
+
+        @media (max-width: 520px) {
+          .sa-flyer-controls {
+            grid-template-columns: 1fr !important;
+          }
+
+          .sa-flyer-counter {
+            order: -1;
+            text-align: center;
+          }
+        }
+
         .sa-support-grid {
           align-items: start;
         }
@@ -1856,6 +2462,32 @@ export default function CustomerPage() {
         }
 
         .sa-filter-bar-mobile-helper {
+          display: none;
+        }
+
+        /* PATCH_84A2D_FIX2_CSS */
+        .sa-flyer-image-canvas {
+          user-select: none;
+          -webkit-user-select: none;
+          -webkit-touch-callout: none;
+          touch-action: pan-x pan-y;
+        }
+
+        .sa-flyer-fullscreen-stage {
+          overscroll-behavior: contain;
+        }
+
+        /* PATCH_84A2E_SCROLLBAR_CSS */
+        .sa-flyer-scroll-stage,
+        .sa-flyer-fullscreen-stage {
+          scrollbar-width: none;
+          -ms-overflow-style: none;
+        }
+
+        .sa-flyer-scroll-stage::-webkit-scrollbar,
+        .sa-flyer-fullscreen-stage::-webkit-scrollbar {
+          width: 0;
+          height: 0;
           display: none;
         }
 
@@ -2102,6 +2734,99 @@ export default function CustomerPage() {
           </div>
         </section>
       )}
+
+      {flyerFullscreen && activeFlyerPage && (
+        <section
+          data-sa-flyer-fullscreen="true"
+          style={styles.flyerFullscreenOverlay}
+        >
+          <div style={styles.flyerFullscreenToolbar}>
+            <button
+              type="button"
+              onClick={closeFlyerFullscreen}
+              style={styles.receiptBackButton}
+            >
+              Chiudi
+            </button>
+
+            <div style={{ minWidth: 0, flex: 1, textAlign: "center" }}>
+              <strong style={{ display: "block" }}>
+                {data.flyer?.title || "Volantino"}
+              </strong>
+              <span style={{ color: "#94a3b8", fontSize: "13px" }}>
+                Pagina {safeFlyerPage} / {flyerPageCount}
+              </span>
+            </div>
+
+            <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
+              <button type="button" onClick={() => changeFlyerZoom(-0.2)} style={styles.flyerSmallButton}>-</button>
+              <strong style={styles.flyerCounter}>{Math.round(flyerZoom * 100)}%</strong>
+              <button type="button" onClick={() => changeFlyerZoom(0.2)} style={styles.flyerSmallButton}>+</button>
+              <button type="button" onClick={() => setFlyerZoomSafe(1)} style={styles.flyerSmallButton}>Reset</button>
+            </div>
+          </div>
+
+          <div
+            className="sa-flyer-fullscreen-stage"
+            style={styles.flyerFullscreenStage}
+            onWheel={handleFlyerWheel}
+            onMouseDown={handleFlyerMouseDown}
+            onMouseMove={handleFlyerMouseMove}
+            onMouseUp={endFlyerMouseDrag}
+            onMouseLeave={endFlyerMouseDrag}
+            onTouchStart={handleFlyerTouchStart}
+            onTouchMove={handleFlyerTouchMove}
+            onTouchEnd={handleFlyerTouchEnd}
+          >
+            {/* PATCH_84A2D_FIX2_FULLSCREEN_EVENTS */}
+            {/* PATCH_84A2E_FULLSCREEN_DRAG_EVENTS */}
+            <div
+              className="sa-flyer-image-canvas"
+              role="img"
+              aria-label={`Volantino pagina ${safeFlyerPage}`}
+              onContextMenu={(event) => event.preventDefault()}
+              style={{
+                ...styles.flyerFullscreenCanvas,
+                // PATCH_84A2D_FIX2_FULLSCREEN_FIT_SIZE
+                width: `calc(min(82vh, 1000px, 98vw) * 0.935 * ${flyerZoom})`,
+                height: `calc(min(82vh, 1000px, 98vw) * ${flyerZoom})`,
+                backgroundImage: `url("${activeFlyerPage.image_url}")`,
+              }}
+            />
+          </div>
+
+          <div style={{ ...styles.flyerFullscreenToolbar, justifyContent: "center" }}>
+            <button
+              type="button"
+              onClick={() => goToFlyerPage(safeFlyerPage - 1)}
+              disabled={safeFlyerPage <= 1}
+              style={{
+                ...styles.flyerControlButton,
+                width: "auto",
+                opacity: safeFlyerPage <= 1 ? 0.45 : 1,
+                cursor: safeFlyerPage <= 1 ? "not-allowed" : "pointer",
+              }}
+            >
+              Precedente
+            </button>
+
+            <button
+              type="button"
+              onClick={() => goToFlyerPage(safeFlyerPage + 1)}
+              disabled={safeFlyerPage >= flyerPageCount}
+              style={{
+                ...styles.flyerControlButton,
+                width: "auto",
+                opacity: safeFlyerPage >= flyerPageCount ? 0.45 : 1,
+                cursor: safeFlyerPage >= flyerPageCount ? "not-allowed" : "pointer",
+              }}
+            >
+              Successiva
+            </button>
+          </div>
+        </section>
+      )}
+      {/* PATCH_84A2C_FLYER_FULLSCREEN_OVERLAY */}
 
       <div className="sa-shell" style={styles.shell}>
         {tab === "home" && (
@@ -2404,6 +3129,146 @@ export default function CustomerPage() {
             )}
           </>
         )}
+
+        {tab === "flyer" && (
+          <>
+            <h1 style={{ marginTop: 0 }}>Volantino</h1>
+            <p style={{ color: "#cbd5e1", lineHeight: 1.5 }}>
+              Sfoglia il volantino aggiornato direttamente dalla tua WebApp.
+            </p>
+
+            {!data.flyer?.available || !activeFlyerPage ? (
+              <div className="sa-app-card" style={styles.card}>
+                Nessun volantino disponibile al momento.
+              </div>
+            ) : (
+              <section className="sa-flyer-page sa-app-card" style={styles.flyerCard}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: "12px", alignItems: "center", flexWrap: "wrap", marginBottom: "12px" }}>
+                  <div>
+                    <strong style={{ display: "block", fontSize: "18px" }}>
+                      {data.flyer.title || "Volantino"}
+                    </strong>
+                    <span style={{ color: "#94a3b8", fontSize: "13px" }}>
+                      Scorri lateralmente o usa i pulsanti.
+                    </span>
+                  </div>
+                  <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
+                    <span style={styles.flyerCounter}>
+                      Pagina {safeFlyerPage} / {flyerPageCount}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={openFlyerFullscreen}
+                      style={styles.flyerSmallButton}
+                    >
+                      A tutto schermo
+                    </button>
+                  </div>
+                  {/* PATCH_84A2C_FLYER_HEADER_FULLSCREEN_BUTTON */}
+                </div>
+
+                <div
+                  className="sa-flyer-scroll-stage"
+                  style={styles.flyerImageWrap}
+                  onWheel={handleFlyerWheel}
+                  onMouseDown={handleFlyerMouseDown}
+                  onMouseMove={handleFlyerMouseMove}
+                  onMouseUp={endFlyerMouseDrag}
+                  onMouseLeave={endFlyerMouseDrag}
+                  onTouchStart={handleFlyerTouchStart}
+                  onTouchMove={handleFlyerTouchMove}
+                  onTouchEnd={handleFlyerTouchEnd}
+                >
+                  {/* PATCH_84A2D_FIX2_MAIN_EVENTS */}
+                  {/* PATCH_84A2E_MAIN_DRAG_EVENTS */}
+                  <div
+                    className="sa-flyer-image-canvas"
+                    role="img"
+                    aria-label={`Volantino pagina ${safeFlyerPage}`}
+                    onContextMenu={(event) => event.preventDefault()}
+                    style={{
+                      ...styles.flyerImageCanvas,
+                      // PATCH_84A2D_FIX2_MAIN_FIT_SIZE
+                      width: `calc(min(64vh, 780px, 96vw) * 0.935 * ${flyerZoom})`,
+                      height: `calc(min(64vh, 780px, 96vw) * ${flyerZoom})`,
+                      backgroundImage: `url("${activeFlyerPage.image_url}")`,
+                    }}
+                  />
+                  {/* PATCH_84A2C_FLYER_CANVAS_RENDER */}
+                </div>
+
+                <div style={styles.flyerZoomBar}>
+                  <button
+                    type="button"
+                    onClick={() => changeFlyerZoom(-0.2)}
+                    disabled={flyerZoom <= 1}
+                    style={{
+                      ...styles.flyerSmallButton,
+                      opacity: flyerZoom <= 1 ? 0.45 : 1,
+                      cursor: flyerZoom <= 1 ? "not-allowed" : "pointer",
+                    }}
+                  >
+                    Zoom -
+                  </button>
+                  <strong style={styles.flyerCounter}>{Math.round(flyerZoom * 100)}%</strong>
+                  <button
+                    type="button"
+                    onClick={() => setFlyerZoomSafe(1)}
+                    style={styles.flyerSmallButton}
+                  >
+                    Reset
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => changeFlyerZoom(0.2)}
+                    disabled={flyerZoom >= 3.5}
+                    style={{
+                      ...styles.flyerSmallButton,
+                      opacity: flyerZoom >= 3.5 ? 0.45 : 1,
+                      cursor: flyerZoom >= 3.5 ? "not-allowed" : "pointer",
+                    }}
+                  >
+                    Zoom +
+                  </button>
+                </div>
+                {/* PATCH_84A2C_FLYER_ZOOM_BAR_RENDER */}
+
+                <div className="sa-flyer-controls" style={styles.flyerControls}>
+                  <button
+                    type="button"
+                    onClick={() => goToFlyerPage(safeFlyerPage - 1)}
+                    disabled={safeFlyerPage <= 1}
+                    style={{
+                      ...styles.flyerControlButton,
+                      opacity: safeFlyerPage <= 1 ? 0.45 : 1,
+                      cursor: safeFlyerPage <= 1 ? "not-allowed" : "pointer",
+                    }}
+                  >
+                    Precedente
+                  </button>
+
+                  <strong className="sa-flyer-counter" style={styles.flyerCounter}>
+                    {safeFlyerPage} / {flyerPageCount}
+                  </strong>
+
+                  <button
+                    type="button"
+                    onClick={() => goToFlyerPage(safeFlyerPage + 1)}
+                    disabled={safeFlyerPage >= flyerPageCount}
+                    style={{
+                      ...styles.flyerControlButton,
+                      opacity: safeFlyerPage >= flyerPageCount ? 0.45 : 1,
+                      cursor: safeFlyerPage >= flyerPageCount ? "not-allowed" : "pointer",
+                    }}
+                  >
+                    Successiva
+                  </button>
+                </div>
+              </section>
+            )}
+          </>
+        )}
+        {/* PATCH_84A2B_FLYER_RENDER */}
 
         {tab === "devices" && (
           <>
