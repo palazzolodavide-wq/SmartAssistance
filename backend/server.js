@@ -7,6 +7,7 @@ const rateLimit = require("express-rate-limit");
 const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
+const { execFileSync } = require("child_process");
 const nodemailer = require("nodemailer");
 const { searchAmazon } = require("./services/amazon");
 const { searchCreators } = require("./services/creators");
@@ -2447,6 +2448,294 @@ app.get("/api/app/:token/flyer/pages/:pageNumber", async (req, res) => {
 });
 
 app.use("/api", authenticateAdmin);
+
+
+// PATCH_84A4_ADMIN_FLYER_UPLOAD_BACKEND
+const saFlyerRawPdfUpload = express.raw({
+  type: ["application/pdf", "application/octet-stream"],
+  limit: process.env.SA_FLYER_UPLOAD_LIMIT || "80mb"
+});
+
+function saSanitizeFlyerFilename(value, fallback = "volantino.pdf") {
+  const cleaned = String(value || fallback)
+    .replace(/[^\w.\- ]+/g, "_")
+    .replace(/\s+/g, "_")
+    .replace(/_+/g, "_")
+    .slice(0, 120);
+
+  return cleaned.toLowerCase().endsWith(".pdf") ? cleaned : `${cleaned || "volantino"}.pdf`;
+}
+
+function saBuildFlyerRunName() {
+  const now = new Date();
+  const pad = (value) => String(value).padStart(2, "0");
+
+  return [
+    "flyer",
+    now.getFullYear(),
+    pad(now.getMonth() + 1),
+    pad(now.getDate()),
+    "_",
+    pad(now.getHours()),
+    pad(now.getMinutes()),
+    pad(now.getSeconds()),
+    "_",
+    crypto.randomBytes(3).toString("hex")
+  ].join("");
+}
+
+function saParsePdfPageCount(pdfPath) {
+  const output = execFileSync("pdfinfo", [pdfPath], {
+    encoding: "utf8",
+    timeout: 60000,
+    maxBuffer: 1024 * 1024
+  });
+
+  const match = output.match(/^Pages:\s+(\d+)/mi);
+  const count = match ? Number.parseInt(match[1], 10) : 0;
+
+  if (!Number.isFinite(count) || count < 1) {
+    throw new Error("Numero pagine PDF non rilevato");
+  }
+
+  return count;
+}
+
+function saConvertFlyerPdfToPages(pdfPath, runName) {
+  const pagesDir = path.join(saFlyerStorageRoot, "pages");
+  fs.mkdirSync(pagesDir, { recursive: true });
+
+  const outputPrefix = path.join(pagesDir, `${runName}_page`);
+
+  execFileSync("pdftoppm", ["-jpeg", "-r", "150", pdfPath, outputPrefix], {
+    encoding: "utf8",
+    timeout: 300000,
+    maxBuffer: 1024 * 1024
+  });
+
+  const files = fs.readdirSync(pagesDir)
+    .filter((name) => name.startsWith(`${runName}_page-`) && /\.jpe?g$/i.test(name))
+    .map((name) => {
+      const match = name.match(/_page-(\d+)\.jpe?g$/i);
+
+      return {
+        image_filename: name,
+        image_path: `pages/${name}`,
+        parsed_page_number: match ? Number.parseInt(match[1], 10) : 0
+      };
+    })
+    .sort((a, b) => {
+      if (a.parsed_page_number && b.parsed_page_number) {
+        return a.parsed_page_number - b.parsed_page_number;
+      }
+
+      return a.image_filename.localeCompare(b.image_filename);
+    })
+    .map((item, index) => ({
+      image_filename: item.image_filename,
+      image_path: item.image_path,
+      page_number: item.parsed_page_number || index + 1
+    }));
+
+  if (files.length < 1) {
+    throw new Error("Conversione PDF completata senza immagini pagina");
+  }
+
+  return files;
+}
+
+function saDeleteFlyerRelativeFile(relativePath) {
+  const fullPath = saResolveFlyerStoragePath(relativePath);
+
+  if (!fullPath) {
+    return;
+  }
+
+  try {
+    if (fs.existsSync(fullPath)) {
+      fs.unlinkSync(fullPath);
+    }
+  } catch (err) {
+    console.warn("FLYER FILE CLEANUP WARNING:", relativePath, err.message);
+  }
+}
+
+async function saCleanupFlyerRetention(maxFlyers = 2) {
+  const keepResult = await pool.query(`
+    SELECT id
+    FROM flyers
+    ORDER BY COALESCE(published_at, imported_at) DESC, id DESC
+    LIMIT $1
+  `, [maxFlyers]);
+
+  const keepIds = keepResult.rows.map((row) => Number(row.id));
+
+  if (keepIds.length < 1) {
+    return;
+  }
+
+  const oldResult = await pool.query(`
+    SELECT
+      f.id,
+      f.stored_pdf_path,
+      fp.image_path
+    FROM flyers f
+    LEFT JOIN flyer_pages fp ON fp.flyer_id = f.id
+    WHERE f.id <> ALL($1::int[])
+  `, [keepIds]);
+
+  const fileSet = new Set();
+
+  oldResult.rows.forEach((row) => {
+    if (row.stored_pdf_path) fileSet.add(row.stored_pdf_path);
+    if (row.image_path) fileSet.add(row.image_path);
+  });
+
+  await pool.query("DELETE FROM flyers WHERE id <> ALL($1::int[])", [keepIds]);
+
+  fileSet.forEach((relativePath) => saDeleteFlyerRelativeFile(relativePath));
+}
+
+app.post("/api/flyers/upload", saFlyerRawPdfUpload, async (req, res) => {
+  const client = await pool.connect();
+
+  let storedPdfPath = "";
+  let generatedPages = [];
+
+  try {
+    const body = Buffer.isBuffer(req.body) ? req.body : null;
+
+    if (!body || body.length < 1024) {
+      return res.status(400).json({
+        success: false,
+        error: "PDF mancante o troppo piccolo"
+      });
+    }
+
+    if (body.slice(0, 5).toString("utf8") !== "%PDF-") {
+      return res.status(400).json({
+        success: false,
+        error: "Il file caricato non sembra un PDF valido"
+      });
+    }
+
+    const hash = crypto.createHash("sha256").update(body).digest("hex");
+
+    const duplicateResult = await pool.query(`
+      SELECT id, title, page_count, status, imported_at, published_at
+      FROM flyers
+      WHERE file_hash = $1
+      ORDER BY id DESC
+      LIMIT 1
+    `, [hash]);
+
+    if (duplicateResult.rowCount > 0) {
+      const duplicate = duplicateResult.rows[0];
+
+      return res.json({
+        success: true,
+        duplicate: true,
+        message: "Volantino già importato",
+        flyer: {
+          ...duplicate,
+          page_count: Number(duplicate.page_count || 0)
+        }
+      });
+    }
+
+    const runName = saBuildFlyerRunName();
+    const originalFilename = saSanitizeFlyerFilename(req.query.filename || req.headers["x-flyer-filename"] || "volantino.pdf");
+    const title = String(req.query.title || req.headers["x-flyer-title"] || originalFilename.replace(/\.pdf$/i, "") || "Volantino").trim().slice(0, 160);
+
+    const originalsDir = path.join(saFlyerStorageRoot, "originals");
+    fs.mkdirSync(originalsDir, { recursive: true });
+
+    const storedPdfName = `${runName}.pdf`;
+    storedPdfPath = `originals/${storedPdfName}`;
+
+    const pdfFullPath = path.join(originalsDir, storedPdfName);
+    fs.writeFileSync(pdfFullPath, body);
+
+    const pageCount = saParsePdfPageCount(pdfFullPath);
+    generatedPages = saConvertFlyerPdfToPages(pdfFullPath, runName);
+
+    if (generatedPages.length !== pageCount) {
+      console.warn(`FLYER PAGE COUNT WARNING: pdfinfo=${pageCount} converted=${generatedPages.length}`);
+    }
+
+    await client.query("BEGIN");
+
+    await client.query("UPDATE flyers SET status = 'archived' WHERE status = 'active'");
+
+    const flyerResult = await client.query(`
+      INSERT INTO flyers (
+        title,
+        source_type,
+        original_filename,
+        stored_pdf_path,
+        file_hash,
+        page_count,
+        status,
+        imported_at,
+        published_at
+      )
+      VALUES ($1, 'admin_upload', $2, $3, $4, $5, 'active', NOW(), NOW())
+      RETURNING id, title, page_count, status, imported_at, published_at
+    `, [title, originalFilename, storedPdfPath, hash, generatedPages.length]);
+
+    const flyer = flyerResult.rows[0];
+
+    for (const page of generatedPages) {
+      await client.query(`
+        INSERT INTO flyer_pages (
+          flyer_id,
+          page_number,
+          image_filename,
+          image_path,
+          width,
+          height
+        )
+        VALUES ($1, $2, $3, $4, NULL, NULL)
+      `, [
+        flyer.id,
+        page.page_number,
+        page.image_filename,
+        page.image_path
+      ]);
+    }
+
+    await client.query("COMMIT");
+
+    await saCleanupFlyerRetention(2);
+
+    return res.json({
+      success: true,
+      duplicate: false,
+      flyer: {
+        ...flyer,
+        page_count: Number(flyer.page_count || generatedPages.length),
+        pages_available: generatedPages.length
+      }
+    });
+  } catch (err) {
+    try { await client.query("ROLLBACK"); } catch (_) {}
+
+    if (storedPdfPath) {
+      saDeleteFlyerRelativeFile(storedPdfPath);
+    }
+
+    generatedPages.forEach((page) => saDeleteFlyerRelativeFile(page.image_path));
+
+    console.error("ADMIN FLYER UPLOAD ERROR:", err);
+
+    return res.status(500).json({
+      success: false,
+      error: err.message || "Errore import volantino PDF"
+    });
+  } finally {
+    client.release();
+  }
+});
 
 // PATCH_84A3A_FIX1_ADMIN_FLYERS_API
 app.get("/api/flyers", async (req, res) => {

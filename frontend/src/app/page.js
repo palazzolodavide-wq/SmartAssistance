@@ -130,6 +130,10 @@ export default function Home() {
   // PATCH_84A3B_ADMIN_FLYERS_STATE
   const [flyers, setFlyers] = useState([]);
   const [flyerMessage, setFlyerMessage] = useState("");
+  // PATCH_84A4_ADMIN_FLYER_UPLOAD_STATE
+  const [flyerUploadFile, setFlyerUploadFile] = useState(null);
+  const [flyerUploadTitle, setFlyerUploadTitle] = useState("");
+  const [flyerUploading, setFlyerUploading] = useState(false);
 
   const [userSearch, setUserSearch] = useState("");
   const [deviceSearch, setDeviceSearch] = useState("");
@@ -529,6 +533,67 @@ export default function Home() {
     }
   }
 
+  // PATCH_84A4_ADMIN_FLYER_UPLOAD_HELPER
+  async function uploadFlyerPdf(event) {
+    event.preventDefault();
+
+    const formElement = event.currentTarget; // PATCH_84A4_FIX1B_SAFE_FORM_RESET
+
+    if (!flyerUploadFile) {
+      alert("Seleziona un file PDF.");
+      return;
+    }
+
+    const fileName = flyerUploadFile.name || "volantino.pdf";
+
+    if (!fileName.toLowerCase().endsWith(".pdf")) {
+      alert("Il file deve essere un PDF.");
+      return;
+    }
+
+    try {
+      setFlyerUploading(true);
+      setFlyerMessage("Import volantino in corso...");
+
+      const title = (flyerUploadTitle || fileName.replace(/\.pdf$/i, "") || "Volantino").trim();
+
+      const res = await apiFetch(
+        `${API_URL}/api/flyers/upload?title=${encodeURIComponent(title)}&filename=${encodeURIComponent(fileName)}`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/pdf",
+          },
+          body: flyerUploadFile,
+        }
+      );
+
+      const data = await res.json();
+
+      if (!res.ok || data.success === false) {
+        throw new Error(data.error || "Errore upload volantino");
+      }
+
+      if (data.duplicate) {
+        setFlyerMessage("Questo PDF era già stato importato. Nessun duplicato creato.");
+      } else {
+        setFlyerMessage("Volantino caricato, convertito e pubblicato nella WebApp cliente.");
+      }
+
+      setFlyerUploadFile(null);
+      setFlyerUploadTitle("");
+      if (formElement && typeof formElement.reset === "function") {
+        formElement.reset();
+      }
+
+      await loadData();
+    } catch (err) {
+      setFlyerMessage("");
+      alert(err.message);
+    } finally {
+      setFlyerUploading(false);
+    }
+  }
   function calculateWarrantyExpiry(startDate, years = 2) {
     if (!startDate) {
       return "";
@@ -5137,14 +5202,43 @@ export default function Home() {
                 </div>
               )}
 
-              <div className="inline-info-box" style={{ marginBottom: "14px" }}>
+              <form className="inline-info-box" style={{ marginBottom: "14px", display: "grid", gap: "12px" }} onSubmit={uploadFlyerPdf}>
                 <div>
                   <div className="row-title">Import PDF</div>
                   <div className="row-subtitle">
-                    In questa fase l'import del PDF resta tramite script tecnico. Il prossimo step aggiungerà upload PDF da Admin.
+                    Carica un PDF volantino: il sistema lo salva, lo converte in pagine JPG e lo pubblica nella WebApp cliente.
                   </div>
                 </div>
-              </div>
+
+                <div className="form-grid" style={{ gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr) auto", alignItems: "end" }}>
+                  <Field label="Titolo volantino">
+                    <input
+                      value={flyerUploadTitle}
+                      onChange={(e) => setFlyerUploadTitle(e.target.value)}
+                      placeholder="Es. Volantino settimana"
+                      disabled={flyerUploading}
+                    />
+                  </Field>
+
+                  <Field label="File PDF">
+                    <input
+                      type="file"
+                      accept="application/pdf,.pdf"
+                      onChange={(e) => setFlyerUploadFile(e.target.files?.[0] || null)}
+                      disabled={flyerUploading}
+                    />
+                  </Field>
+
+                  <button type="submit" className="primary-button" disabled={flyerUploading || !flyerUploadFile}>
+                    {flyerUploading ? "Import in corso..." : "Carica PDF"}
+                  </button>
+                </div>
+
+                <div className="row-subtitle">
+                  Limite tecnico backend: 80 MB. Dopo il caricamento verrà mantenuta la retention degli ultimi 2 volantini.
+                </div>
+              </form>
+              {/* PATCH_84A4_ADMIN_FLYER_UPLOAD_UI */}
 
               <div className="table-wrap">
                 <table>
