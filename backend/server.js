@@ -2448,6 +2448,233 @@ app.get("/api/app/:token/flyer/pages/:pageNumber", async (req, res) => {
 
 app.use("/api", authenticateAdmin);
 
+// PATCH_84A3A_FIX1_ADMIN_FLYERS_API
+app.get("/api/flyers", async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT
+        f.id,
+        f.title,
+        f.source_type,
+        f.source_email_from,
+        f.source_email_subject,
+        f.source_message_id,
+        f.original_filename,
+        f.stored_pdf_path,
+        f.file_hash,
+        f.page_count,
+        f.status,
+        f.imported_at,
+        f.published_at,
+        f.error_message,
+        COUNT(fp.id)::int AS pages_available,
+        MIN(fp.image_path) FILTER (WHERE fp.page_number = 1) AS first_page_path
+      FROM flyers f
+      LEFT JOIN flyer_pages fp ON fp.flyer_id = f.id
+      GROUP BY f.id
+      ORDER BY COALESCE(f.published_at, f.imported_at) DESC, f.id DESC
+    `);
+
+    return res.json({
+      success: true,
+      flyers: result.rows.map((flyer) => ({
+        id: flyer.id,
+        title: flyer.title,
+        source_type: flyer.source_type,
+        source_email_from: flyer.source_email_from,
+        source_email_subject: flyer.source_email_subject,
+        source_message_id: flyer.source_message_id,
+        original_filename: flyer.original_filename,
+        stored_pdf_path: flyer.stored_pdf_path,
+        file_hash: flyer.file_hash,
+        page_count: Number(flyer.page_count || 0),
+        pages_available: Number(flyer.pages_available || 0),
+        status: flyer.status,
+        imported_at: flyer.imported_at,
+        published_at: flyer.published_at,
+        error_message: flyer.error_message,
+        first_page_url: flyer.first_page_path ? `/api/flyers/${flyer.id}/pages/1` : null
+      }))
+    });
+  } catch (err) {
+    console.error("ADMIN FLYERS LIST ERROR:", err);
+    return res.status(500).json({
+      success: false,
+      error: "Errore caricamento volantini"
+    });
+  }
+});
+
+app.get("/api/flyers/:id/pages/:pageNumber", async (req, res) => {
+  try {
+    const flyerId = Number.parseInt(req.params.id, 10);
+    const pageNumber = Number.parseInt(req.params.pageNumber, 10);
+
+    if (!Number.isFinite(flyerId) || flyerId < 1 || !Number.isFinite(pageNumber) || pageNumber < 1) {
+      return res.status(400).json({
+        success: false,
+        error: "Parametri non validi"
+      });
+    }
+
+    const pageResult = await pool.query(`
+      SELECT fp.image_path
+      FROM flyer_pages fp
+      JOIN flyers f ON f.id = fp.flyer_id
+      WHERE f.id = $1
+        AND fp.page_number = $2
+      LIMIT 1
+    `, [flyerId, pageNumber]);
+
+    if (pageResult.rowCount === 0) {
+      return res.status(404).json({
+        success: false,
+        error: "Pagina volantino non trovata"
+      });
+    }
+
+    const imagePath = saResolveFlyerStoragePath(pageResult.rows[0].image_path);
+
+    if (!imagePath || !fs.existsSync(imagePath)) {
+      return res.status(404).json({
+        success: false,
+        error: "File pagina non disponibile"
+      });
+    }
+
+    res.setHeader("Cache-Control", "private, max-age=300");
+    res.type("jpg");
+    return res.sendFile(imagePath);
+  } catch (err) {
+    console.error("ADMIN FLYER PAGE ERROR:", err);
+    return res.status(500).json({
+      success: false,
+      error: "Errore caricamento pagina volantino"
+    });
+  }
+});
+
+app.post("/api/flyers/:id/publish", async (req, res) => {
+  const client = await pool.connect();
+
+  try {
+    const flyerId = Number.parseInt(req.params.id, 10);
+
+    if (!Number.isFinite(flyerId) || flyerId < 1) {
+      return res.status(400).json({
+        success: false,
+        error: "ID volantino non valido"
+      });
+    }
+
+    await client.query("BEGIN");
+
+    const flyerResult = await client.query(
+      "SELECT id, title, page_count FROM flyers WHERE id = $1 LIMIT 1",
+      [flyerId]
+    );
+
+    if (flyerResult.rowCount === 0) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({
+        success: false,
+        error: "Volantino non trovato"
+      });
+    }
+
+    const pagesResult = await client.query(
+      "SELECT COUNT(*)::int AS total FROM flyer_pages WHERE flyer_id = $1",
+      [flyerId]
+    );
+
+    const pagesAvailable = Number(pagesResult.rows[0]?.total || 0);
+
+    if (pagesAvailable < 1) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({
+        success: false,
+        error: "Volantino senza pagine disponibili"
+      });
+    }
+
+    await client.query(
+      "UPDATE flyers SET status = 'archived' WHERE status = 'active' AND id <> $1",
+      [flyerId]
+    );
+
+    const updated = await client.query(`
+      UPDATE flyers
+      SET status = 'active',
+          published_at = NOW(),
+          error_message = NULL
+      WHERE id = $1
+      RETURNING id, title, page_count, status, imported_at, published_at
+    `, [flyerId]);
+
+    await client.query("COMMIT");
+
+    return res.json({
+      success: true,
+      flyer: {
+        ...updated.rows[0],
+        page_count: Number(updated.rows[0].page_count || pagesAvailable),
+        pages_available: pagesAvailable
+      }
+    });
+  } catch (err) {
+    try { await client.query("ROLLBACK"); } catch (_) {}
+    console.error("ADMIN FLYER PUBLISH ERROR:", err);
+    return res.status(500).json({
+      success: false,
+      error: "Errore pubblicazione volantino"
+    });
+  } finally {
+    client.release();
+  }
+});
+
+app.post("/api/flyers/:id/archive", async (req, res) => {
+  try {
+    const flyerId = Number.parseInt(req.params.id, 10);
+
+    if (!Number.isFinite(flyerId) || flyerId < 1) {
+      return res.status(400).json({
+        success: false,
+        error: "ID volantino non valido"
+      });
+    }
+
+    const result = await pool.query(`
+      UPDATE flyers
+      SET status = 'archived'
+      WHERE id = $1
+      RETURNING id, title, page_count, status, imported_at, published_at
+    `, [flyerId]);
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({
+        success: false,
+        error: "Volantino non trovato"
+      });
+    }
+
+    return res.json({
+      success: true,
+      flyer: {
+        ...result.rows[0],
+        page_count: Number(result.rows[0].page_count || 0)
+      }
+    });
+  } catch (err) {
+    console.error("ADMIN FLYER ARCHIVE ERROR:", err);
+    return res.status(500).json({
+      success: false,
+      error: "Errore archiviazione volantino"
+    });
+  }
+});
+
+
 
 /*
 |--------------------------------------------------------------------------

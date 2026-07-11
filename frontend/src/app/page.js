@@ -109,6 +109,7 @@ const NAV_ITEMS = [
   { id: "offers", label: "Offerte" },
   { id: "guides", label: "Guide WebApp" },
   { id: "live", label: "Offerte Live" },
+  { id: "flyers", label: "Volantini" }, // PATCH_84A3B_ADMIN_FLYERS_NAV
   { id: "system", label: "Sistema" },
   { id: "stats", label: "Statistiche" },
 ];
@@ -126,6 +127,9 @@ export default function Home() {
   const [devices, setDevices] = useState([]);
   const [offers, setOffers] = useState([]);
   const [guides, setGuides] = useState([]);
+  // PATCH_84A3B_ADMIN_FLYERS_STATE
+  const [flyers, setFlyers] = useState([]);
+  const [flyerMessage, setFlyerMessage] = useState("");
 
   const [userSearch, setUserSearch] = useState("");
   const [deviceSearch, setDeviceSearch] = useState("");
@@ -307,20 +311,22 @@ export default function Home() {
     try {
       setLoading(true);
 
-      const [usersRes, devicesRes, offersRes, guidesRes, liveRes, liveMonitorRes] = await Promise.all([
+      const [usersRes, devicesRes, offersRes, guidesRes, flyersRes, liveRes, liveMonitorRes] = await Promise.all([
         apiFetch(`${API_URL}/api/users`),
         apiFetch(`${API_URL}/api/devices`),
         apiFetch(`${API_URL}/api/offers`),
         apiFetch(`${API_URL}/api/webapp-guides`),
+        apiFetch(`${API_URL}/api/flyers`), // PATCH_84A3B_ADMIN_FLYERS_LOAD_PROMISE
         apiFetch(`${API_URL}/api/live-offers`),
         apiFetch(`${API_URL}/api/live-offers/monitor`),
       ]);
 
-      const [usersData, devicesData, offersData, guidesData, liveData, liveMonitorData] = await Promise.all([
+      const [usersData, devicesData, offersData, guidesData, flyersData, liveData, liveMonitorData] = await Promise.all([
         usersRes.json(),
         devicesRes.json(),
         offersRes.json(),
         guidesRes.json(),
+        flyersRes.json(), // PATCH_84A3B_ADMIN_FLYERS_LOAD_JSON
         liveRes.json(),
         liveMonitorRes.json(),
       ]);
@@ -329,6 +335,8 @@ export default function Home() {
       setDevices(Array.isArray(devicesData) ? devicesData : []);
       setOffers(Array.isArray(offersData) ? offersData : []);
       setGuides(Array.isArray(guidesData?.guides) ? guidesData.guides : []);
+      // PATCH_84A3B_ADMIN_FLYERS_SETDATA
+      setFlyers(Array.isArray(flyersData?.flyers) ? flyersData.flyers : []);
 
       if (liveData?.success) {
         setLiveSettings({ ...EMPTY_LIVE_SETTINGS, ...(liveData.settings || {}) });
@@ -405,6 +413,120 @@ export default function Home() {
     if (!value) return "-";
 
     return new Date(value).toLocaleDateString("it-IT");
+  }
+
+  // PATCH_84A3B_ADMIN_FLYERS_HELPERS
+  function getFlyerStatusLabel(status) {
+    if (status === "active") return "Pubblicato";
+    if (status === "archived") return "Archiviato";
+    if (status === "error") return "Errore";
+
+    return status || "-";
+  }
+
+  function getFlyerStatusClass(status) {
+    if (status === "active") return "badge badge-green";
+    if (status === "archived") return "badge badge-orange";
+    if (status === "error") return "badge badge-red";
+
+    return "badge badge-blue";
+  }
+
+  async function openFlyerAdminPreview(flyer, pageNumber = 1) {
+    if (!flyer?.id) {
+      alert("Volantino non valido");
+      return;
+    }
+
+    const previewWindow = window.open("", "_blank");
+
+    try {
+      const res = await apiFetch(`${API_URL}/api/flyers/${flyer.id}/pages/${pageNumber}`);
+
+      if (!res.ok) {
+        let message = "Errore apertura anteprima";
+
+        try {
+          const json = await res.json();
+          message = json.error || message;
+        } catch (_) {}
+
+        throw new Error(message);
+      }
+
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+
+      if (previewWindow) {
+        previewWindow.location.href = url;
+      } else {
+        window.open(url, "_blank");
+      }
+
+      window.setTimeout(() => URL.revokeObjectURL(url), 120000);
+    } catch (err) {
+      if (previewWindow) {
+        previewWindow.close();
+      }
+
+      alert(err.message);
+    }
+  }
+
+  async function publishFlyer(flyer) {
+    if (!flyer?.id) {
+      alert("Volantino non valido");
+      return;
+    }
+
+    if (!confirm(`Pubblicare il volantino "${flyer.title || flyer.original_filename || flyer.id}" nella WebApp cliente?`)) {
+      return;
+    }
+
+    try {
+      const res = await apiFetch(`${API_URL}/api/flyers/${flyer.id}/publish`, {
+        method: "POST",
+      });
+
+      const data = await res.json();
+
+      if (!res.ok || data.success === false) {
+        throw new Error(data.error || "Errore pubblicazione volantino");
+      }
+
+      setFlyerMessage("Volantino pubblicato nella WebApp cliente.");
+      await loadData();
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
+  async function archiveFlyer(flyer) {
+    if (!flyer?.id) {
+      alert("Volantino non valido");
+      return;
+    }
+
+    if (!confirm(`Archiviare il volantino "${flyer.title || flyer.original_filename || flyer.id}"? Se è quello attivo, non sarà più visibile nella WebApp cliente.`)) {
+      return;
+    }
+
+    try {
+      const res = await apiFetch(`${API_URL}/api/flyers/${flyer.id}/archive`, {
+        method: "POST",
+      });
+
+      const data = await res.json();
+
+      if (!res.ok || data.success === false) {
+        throw new Error(data.error || "Errore archiviazione volantino");
+      }
+
+      setFlyerMessage("Volantino archiviato.");
+      await loadData();
+    } catch (err) {
+      alert(err.message);
+    }
   }
 
   function calculateWarrantyExpiry(startDate, years = 2) {
@@ -4985,6 +5107,118 @@ export default function Home() {
           </>
         )}
 
+
+        {!loading && activeSection === "flyers" && (
+          <>
+            <section className="kpi-grid">
+              <KpiCard label="Volantini totali" value={flyers.length} />
+              <KpiCard label="Volantino attivo" value={flyers.find((flyer) => flyer.status === "active")?.title || "-"} />
+              <KpiCard label="Pagine attive" value={flyers.find((flyer) => flyer.status === "active")?.pages_available || 0} />
+              <KpiCard label="Ultimo import" value={formatSystemDate(flyers[0]?.imported_at)} />
+            </section>
+
+            <section className="panel" style={{ marginTop: "18px" }}>
+              <div className="panel-header">
+                <div>
+                  <h2 className="panel-title">Volantini WebApp</h2>
+                  <div className="panel-subtitle">
+                    Gestisci i volantini importati. Il volantino con stato Pubblicato è quello visibile nella WebApp cliente.
+                  </div>
+                </div>
+
+                <button type="button" className="ghost-button" onClick={loadData}>
+                  Aggiorna
+                </button>
+              </div>
+
+              {flyerMessage && (
+                <div className="inline-info-box" style={{ marginBottom: "14px" }}>
+                  {flyerMessage}
+                </div>
+              )}
+
+              <div className="inline-info-box" style={{ marginBottom: "14px" }}>
+                <div>
+                  <div className="row-title">Import PDF</div>
+                  <div className="row-subtitle">
+                    In questa fase l'import del PDF resta tramite script tecnico. Il prossimo step aggiungerà upload PDF da Admin.
+                  </div>
+                </div>
+              </div>
+
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Volantino</th>
+                      <th>Stato</th>
+                      <th>Pagine</th>
+                      <th>Origine</th>
+                      <th>Date</th>
+                      <th>Azioni</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {flyers.length === 0 ? (
+                      <tr>
+                        <td colSpan="6">Nessun volantino importato.</td>
+                      </tr>
+                    ) : (
+                      flyers.map((flyer) => (
+                        <tr key={flyer.id}>
+                          <td>
+                            <div className="row-title">{flyer.title || "Volantino"}</div>
+                            <div className="row-subtitle">{flyer.original_filename || flyer.stored_pdf_path || "-"}</div>
+                            {flyer.error_message && (
+                              <div className="row-subtitle" style={{ color: "#991b1b" }}>
+                                {flyer.error_message}
+                              </div>
+                            )}
+                          </td>
+                          <td>
+                            <span className={getFlyerStatusClass(flyer.status)}>
+                              {getFlyerStatusLabel(flyer.status)}
+                            </span>
+                          </td>
+                          <td>
+                            <div className="row-title">{flyer.pages_available || 0} / {flyer.page_count || 0}</div>
+                            <div className="row-subtitle">pagine disponibili / dichiarate</div>
+                          </td>
+                          <td>
+                            <div>{flyer.source_type || "-"}</div>
+                            <div className="row-subtitle">{flyer.source_email_subject || flyer.source_email_from || "-"}</div>
+                          </td>
+                          <td>
+                            <div className="row-subtitle">Import: {formatSystemDate(flyer.imported_at)}</div>
+                            <div className="row-subtitle">Pubblicato: {formatSystemDate(flyer.published_at)}</div>
+                          </td>
+                          <td>
+                            <div className="action-row">
+                              <button type="button" className="small-button" onClick={() => openFlyerAdminPreview(flyer, 1)}>
+                                Anteprima
+                              </button>
+
+                              {flyer.status !== "active" && (
+                                <button type="button" className="soft-button" onClick={() => publishFlyer(flyer)}>
+                                  Pubblica
+                                </button>
+                              )}
+
+                              <button type="button" className="danger-button" onClick={() => archiveFlyer(flyer)}>
+                                Archivia
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          </>
+        )}
+        {/* PATCH_84A3B_ADMIN_FLYERS_RENDER */}
 
         {!loading && activeSection === "system" && (
           <>
