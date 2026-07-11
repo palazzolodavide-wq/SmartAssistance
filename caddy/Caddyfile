@@ -16,3 +16,15 @@
 
 	reverse_proxy sa-frontend:3000
 }
+
+7590.ns0.it:5055 {
+        encode gzip
+
+        header {
+                X-Content-Type-Options "nosniff"
+                Referrer-Policy "strict-origin-when-cross-origin"
+                -Server
+        }
+
+        reverse_proxy seerr:5055
+}
