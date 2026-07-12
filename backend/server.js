@@ -8,6 +8,17 @@ const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
 const { execFileSync } = require("child_process");
+
+// PATCH_84A5A_EMAIL_IMPORT_OPTIONAL_DEPS
+let ImapFlow = null;
+let simpleParser = null;
+
+try {
+  ({ ImapFlow } = require("imapflow"));
+  ({ simpleParser } = require("mailparser"));
+} catch (err) {
+  console.warn("[SA_FLYER_EMAIL] Moduli IMAP non disponibili:", err.message);
+}
 const nodemailer = require("nodemailer");
 const { searchAmazon } = require("./services/amazon");
 const { searchCreators } = require("./services/creators");
@@ -2736,6 +2747,728 @@ app.post("/api/flyers/upload", saFlyerRawPdfUpload, async (req, res) => {
     client.release();
   }
 });
+
+
+// PATCH_84A5A_EMAIL_FLYER_WORKER
+const saFlyerEmailState = {
+  enabled: false,
+  configured: false,
+  running: false,
+  last_check_at: null,
+  last_success_at: null,
+  last_error: null,
+  last_result: null,
+  last_import_at: null,
+  last_import_title: null,
+  last_message_id: null,
+  imported_count: 0,
+  duplicate_count: 0,
+  skipped_count: 0,
+  last_imap_error: null
+};
+
+let saFlyerEmailTimer = null;
+
+function saEnvFlag(value, fallback = false) {
+  const raw = String(value ?? (fallback ? "true" : "false")).trim();
+  return /^(true|1|yes|on)$/i.test(raw);
+}
+
+function saFlyerEmailEnabled() {
+  return saEnvFlag(process.env.SA_FLYER_EMAIL_ENABLED, false);
+}
+
+function saFlyerEmailConfigured() {
+  return Boolean(
+    ImapFlow &&
+    simpleParser &&
+    process.env.SA_FLYER_EMAIL_HOST &&
+    process.env.SA_FLYER_EMAIL_PORT &&
+    process.env.SA_FLYER_EMAIL_USER &&
+    process.env.SA_FLYER_EMAIL_PASS
+  );
+}
+
+function saFlyerEmailSafeConfig() {
+  return {
+    enabled: saFlyerEmailEnabled(),
+    configured: saFlyerEmailConfigured(),
+    modules_available: Boolean(ImapFlow && simpleParser),
+    host: process.env.SA_FLYER_EMAIL_HOST || "",
+    port: Number.parseInt(process.env.SA_FLYER_EMAIL_PORT || "993", 10),
+    secure: saEnvFlag(process.env.SA_FLYER_EMAIL_SECURE, true),
+    user_configured: Boolean(process.env.SA_FLYER_EMAIL_USER),
+    pass_configured: Boolean(process.env.SA_FLYER_EMAIL_PASS),
+    mailbox: process.env.SA_FLYER_EMAIL_MAILBOX || "INBOX",
+    poll_seconds: Math.max(60, Number.parseInt(process.env.SA_FLYER_EMAIL_POLL_SECONDS || "300", 10)),
+    mark_seen: saEnvFlag(process.env.SA_FLYER_EMAIL_MARK_SEEN, true),
+    from_allowlist_configured: Boolean(String(process.env.SA_FLYER_EMAIL_FROM_ALLOWLIST || "").trim()),
+    subject_filter_configured: Boolean(String(process.env.SA_FLYER_EMAIL_SUBJECT_FILTER || "").trim()),
+    max_attachment_mb: Math.max(1, Number.parseInt(process.env.SA_FLYER_EMAIL_MAX_ATTACHMENT_MB || "80", 10))
+  };
+}
+
+function saFlyerEmailAllowedFrom(fromText) {
+  const allowlist = String(process.env.SA_FLYER_EMAIL_FROM_ALLOWLIST || "")
+    .split(",")
+    .map((item) => item.trim().toLowerCase())
+    .filter(Boolean);
+
+  if (allowlist.length < 1) {
+    return true;
+  }
+
+  const value = String(fromText || "").toLowerCase();
+
+  return allowlist.some((allowed) => value.includes(allowed));
+}
+
+function saFlyerEmailSubjectAllowed(subject) {
+  const filter = String(process.env.SA_FLYER_EMAIL_SUBJECT_FILTER || "").trim().toLowerCase();
+
+  if (!filter) {
+    return true;
+  }
+
+  return String(subject || "").toLowerCase().includes(filter);
+}
+
+function saFlyerEmailFindPdfAttachments(parsed) {
+  const maxBytes = Math.max(1, Number.parseInt(process.env.SA_FLYER_EMAIL_MAX_ATTACHMENT_MB || "80", 10)) * 1024 * 1024;
+
+  return (parsed.attachments || [])
+    .filter((attachment) => {
+      const filename = String(attachment.filename || "").toLowerCase();
+      const contentType = String(attachment.contentType || "").toLowerCase();
+      const content = attachment.content;
+
+      if (!Buffer.isBuffer(content) || content.length < 1024 || content.length > maxBytes) {
+        return false;
+      }
+
+      return filename.endsWith(".pdf") || contentType.includes("pdf") || content.slice(0, 5).toString("utf8") === "%PDF-";
+    });
+}
+
+function saFlyerEmailTitleFromMessage(parsed, attachment) {
+  const subject = String(parsed.subject || "").trim();
+  const filename = String(attachment.filename || "").trim();
+
+  const title = subject || filename.replace(/\.pdf$/i, "") || "Volantino email";
+
+  return title.slice(0, 160);
+}
+
+async function saImportFlyerPdfBufferFromEmail(options) {
+  const {
+    pdfBuffer,
+    originalFilename,
+    title,
+    sourceEmailFrom,
+    sourceEmailSubject,
+    sourceMessageId
+  } = options;
+
+  const dbClient = await pool.connect();
+
+  let storedPdfPath = "";
+  let generatedPages = [];
+
+  try {
+    if (!Buffer.isBuffer(pdfBuffer) || pdfBuffer.length < 1024) {
+      throw new Error("PDF email mancante o troppo piccolo");
+    }
+
+    if (pdfBuffer.slice(0, 5).toString("utf8") !== "%PDF-") {
+      throw new Error("Allegato email non valido: non sembra un PDF");
+    }
+
+    const hash = crypto.createHash("sha256").update(pdfBuffer).digest("hex");
+
+    const duplicateResult = await pool.query(`
+      SELECT id, title, page_count, status, imported_at, published_at
+      FROM flyers
+      WHERE file_hash = $1
+      ORDER BY id DESC
+      LIMIT 1
+    `, [hash]);
+
+    if (duplicateResult.rowCount > 0) {
+      const duplicate = duplicateResult.rows[0];
+
+      return {
+        success: true,
+        duplicate: true,
+        flyer: {
+          ...duplicate,
+          page_count: Number(duplicate.page_count || 0)
+        }
+      };
+    }
+
+    const runName = saBuildFlyerRunName();
+    const cleanFilename = saSanitizeFlyerFilename(originalFilename || "volantino_email.pdf");
+    const cleanTitle = String(title || cleanFilename.replace(/\.pdf$/i, "") || "Volantino email").trim().slice(0, 160);
+
+    const originalsDir = path.join(saFlyerStorageRoot, "originals");
+    fs.mkdirSync(originalsDir, { recursive: true });
+
+    const storedPdfName = `${runName}.pdf`;
+    storedPdfPath = `originals/${storedPdfName}`;
+
+    const pdfFullPath = path.join(originalsDir, storedPdfName);
+    fs.writeFileSync(pdfFullPath, pdfBuffer);
+
+    const pageCount = saParsePdfPageCount(pdfFullPath);
+    generatedPages = saConvertFlyerPdfToPages(pdfFullPath, runName);
+
+    if (generatedPages.length !== pageCount) {
+      console.warn(`FLYER EMAIL PAGE COUNT WARNING: pdfinfo=${pageCount} converted=${generatedPages.length}`);
+    }
+
+    await dbClient.query("BEGIN");
+
+    await dbClient.query("UPDATE flyers SET status = 'archived' WHERE status = 'active'");
+
+    const flyerResult = await dbClient.query(`
+      INSERT INTO flyers (
+        title,
+        source_type,
+        source_email_from,
+        source_email_subject,
+        source_message_id,
+        original_filename,
+        stored_pdf_path,
+        file_hash,
+        page_count,
+        status,
+        imported_at,
+        published_at
+      )
+      VALUES ($1, 'email_import', $2, $3, $4, $5, $6, $7, $8, 'active', NOW(), NOW())
+      RETURNING id, title, page_count, status, imported_at, published_at
+    `, [
+      cleanTitle,
+      String(sourceEmailFrom || "").slice(0, 320),
+      String(sourceEmailSubject || "").slice(0, 320),
+      String(sourceMessageId || "").slice(0, 320),
+      cleanFilename,
+      storedPdfPath,
+      hash,
+      generatedPages.length
+    ]);
+
+    const flyer = flyerResult.rows[0];
+
+    for (const page of generatedPages) {
+      await dbClient.query(`
+        INSERT INTO flyer_pages (
+          flyer_id,
+          page_number,
+          image_filename,
+          image_path,
+          width,
+          height
+        )
+        VALUES ($1, $2, $3, $4, NULL, NULL)
+      `, [
+        flyer.id,
+        page.page_number,
+        page.image_filename,
+        page.image_path
+      ]);
+    }
+
+    await dbClient.query("COMMIT");
+
+    await saCleanupFlyerRetention(2);
+
+    return {
+      success: true,
+      duplicate: false,
+      flyer: {
+        ...flyer,
+        page_count: Number(flyer.page_count || generatedPages.length),
+        pages_available: generatedPages.length
+      }
+    };
+  } catch (err) {
+    try { await dbClient.query("ROLLBACK"); } catch (_) {}
+
+    if (storedPdfPath) {
+      saDeleteFlyerRelativeFile(storedPdfPath);
+    }
+
+    generatedPages.forEach((page) => saDeleteFlyerRelativeFile(page.image_path));
+
+    throw err;
+  } finally {
+    dbClient.release();
+  }
+}
+
+// PATCH_84A5E_IMAP_FETCH_THEN_IMPORT
+function saFlyerEmailTimeout(promise, ms, label) {
+  let timer = null;
+
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      timer = setTimeout(() => {
+        reject(new Error(`${label} timeout`));
+      }, ms);
+    })
+  ]).finally(() => {
+    if (timer) {
+      clearTimeout(timer);
+    }
+  });
+}
+
+function saCreateFlyerImapClient(safeConfig) {
+  const imapClient = new ImapFlow({
+    host: safeConfig.host,
+    port: safeConfig.port,
+    secure: safeConfig.secure,
+    auth: {
+      user: process.env.SA_FLYER_EMAIL_USER,
+      pass: process.env.SA_FLYER_EMAIL_PASS
+    },
+    connectionTimeout: Math.max(
+      5000,
+      Number.parseInt(
+        process.env.SA_FLYER_EMAIL_CONNECTION_TIMEOUT_MS || "20000",
+        10
+      )
+    ),
+    greetingTimeout: Math.max(
+      5000,
+      Number.parseInt(
+        process.env.SA_FLYER_EMAIL_GREETING_TIMEOUT_MS || "20000",
+        10
+      )
+    ),
+    socketTimeout: Math.max(
+      30000,
+      Number.parseInt(
+        process.env.SA_FLYER_EMAIL_SOCKET_TIMEOUT_MS || "120000",
+        10
+      )
+    ),
+    logger: false
+  });
+
+  imapClient.on("error", (err) => {
+    const message = err?.message || String(err);
+
+    saFlyerEmailState.last_imap_error = message;
+
+    console.warn(
+      "[SA_FLYER_EMAIL] Evento errore IMAP gestito:",
+      message
+    );
+  });
+
+  return imapClient;
+}
+
+async function saSafeFlyerEmailLogout(imapClient) {
+  if (!imapClient) {
+    return;
+  }
+
+  if (imapClient.usable === false) {
+    return;
+  }
+
+  try {
+    await saFlyerEmailTimeout(
+      imapClient.logout(),
+      10000,
+      "IMAP logout"
+    );
+  } catch (err) {
+    console.warn(
+      "[SA_FLYER_EMAIL] Logout IMAP non pulito:",
+      err.message
+    );
+  }
+}
+
+async function saMarkFlyerEmailUidsSeen(imapClient, uids) {
+  const uniqueUids = [
+    ...new Set(
+      (uids || [])
+        .map((uid) => Number(uid))
+        .filter((uid) => Number.isInteger(uid) && uid > 0)
+    )
+  ];
+
+  for (const uid of uniqueUids) {
+    try {
+      await imapClient.messageFlagsAdd(
+        uid,
+        ["\\Seen"],
+        { uid: true }
+      );
+    } catch (err) {
+      console.warn(
+        `[SA_FLYER_EMAIL] Impossibile segnare UID ${uid} come letto:`,
+        err.message
+      );
+    }
+  }
+}
+
+async function saProcessFlyerEmailOnce(options = {}) {
+  const safeConfig = saFlyerEmailSafeConfig();
+
+  saFlyerEmailState.enabled = safeConfig.enabled;
+  saFlyerEmailState.configured = safeConfig.configured;
+  saFlyerEmailState.last_check_at = new Date().toISOString();
+  saFlyerEmailState.last_error = null;
+  saFlyerEmailState.last_imap_error = null;
+
+  if (!safeConfig.enabled) {
+    const result = {
+      ran: false,
+      reason: "disabled"
+    };
+
+    saFlyerEmailState.last_result = result;
+
+    return result;
+  }
+
+  if (!safeConfig.configured) {
+    const result = {
+      ran: false,
+      reason: "not_configured",
+      modules_available: safeConfig.modules_available
+    };
+
+    saFlyerEmailState.last_result = result;
+
+    return result;
+  }
+
+  if (saFlyerEmailState.running) {
+    const result = {
+      ran: false,
+      reason: "already_running"
+    };
+
+    saFlyerEmailState.last_result = result;
+
+    return result;
+  }
+
+  saFlyerEmailState.running = true;
+
+  const result = {
+    ran: true,
+    checked: 0,
+    unseen: 0,
+    candidates: 0,
+    imported: 0,
+    duplicates: 0,
+    skipped: 0,
+    errors: []
+  };
+
+  const candidates = [];
+  const uidsToMarkSeen = [];
+
+  let imapClient = null;
+  let mailboxLock = null;
+
+  try {
+    /*
+     * FASE 1:
+     * connessione IMAP, download email e chiusura connessione.
+     * Nessuna conversione PDF viene fatta con Gmail ancora collegato.
+     */
+    imapClient = saCreateFlyerImapClient(safeConfig);
+
+    await saFlyerEmailTimeout(
+      imapClient.connect(),
+      safeConfig.connection_timeout_ms || 20000,
+      "IMAP connect"
+    );
+
+    mailboxLock = await saFlyerEmailTimeout(
+      imapClient.getMailboxLock(safeConfig.mailbox),
+      20000,
+      "IMAP mailbox lock"
+    );
+
+    const unseenUids = await saFlyerEmailTimeout(
+      imapClient.search(
+        { seen: false },
+        { uid: true }
+      ),
+      30000,
+      "IMAP search"
+    );
+
+    const maxMessages = Math.max(
+      1,
+      Number.parseInt(
+        process.env.SA_FLYER_EMAIL_MAX_MESSAGES || "10",
+        10
+      )
+    );
+
+    const selectedUids = Array.isArray(unseenUids)
+      ? unseenUids.slice(0, maxMessages)
+      : [];
+
+    result.unseen = selectedUids.length;
+
+    if (selectedUids.length > 0) {
+      for await (
+        const message of imapClient.fetch(
+          selectedUids,
+          {
+            uid: true,
+            source: true
+          },
+          {
+            uid: true
+          }
+        )
+      ) {
+        result.checked += 1;
+
+        const uid = Number(message.uid);
+
+        if (
+          safeConfig.mark_seen &&
+          Number.isInteger(uid) &&
+          uid > 0
+        ) {
+          uidsToMarkSeen.push(uid);
+        }
+
+        try {
+          const parsed = await simpleParser(message.source);
+
+          const fromText = parsed.from?.text || "";
+          const subject = parsed.subject || "";
+          const messageId =
+            parsed.messageId ||
+            `uid:${uid}`;
+
+          if (!saFlyerEmailAllowedFrom(fromText)) {
+            result.skipped += 1;
+            saFlyerEmailState.skipped_count += 1;
+            continue;
+          }
+
+          if (!saFlyerEmailSubjectAllowed(subject)) {
+            result.skipped += 1;
+            saFlyerEmailState.skipped_count += 1;
+            continue;
+          }
+
+          const pdfAttachments =
+            saFlyerEmailFindPdfAttachments(parsed);
+
+          if (pdfAttachments.length < 1) {
+            result.skipped += 1;
+            saFlyerEmailState.skipped_count += 1;
+            continue;
+          }
+
+          const attachment = pdfAttachments[0];
+
+          candidates.push({
+            pdfBuffer: Buffer.from(attachment.content),
+            originalFilename:
+              attachment.filename ||
+              "volantino_email.pdf",
+            title: saFlyerEmailTitleFromMessage(
+              parsed,
+              attachment
+            ),
+            sourceEmailFrom: fromText,
+            sourceEmailSubject: subject,
+            sourceMessageId: messageId
+          });
+        } catch (messageErr) {
+          const message =
+            messageErr?.message ||
+            String(messageErr);
+
+          result.errors.push(message);
+
+          console.error(
+            "[SA_FLYER_EMAIL] Errore lettura messaggio:",
+            messageErr
+          );
+        }
+      }
+    }
+
+    result.candidates = candidates.length;
+
+    if (
+      safeConfig.mark_seen &&
+      uidsToMarkSeen.length > 0
+    ) {
+      await saMarkFlyerEmailUidsSeen(
+        imapClient,
+        uidsToMarkSeen
+      );
+    }
+
+    if (mailboxLock) {
+      mailboxLock.release();
+      mailboxLock = null;
+    }
+
+    await saSafeFlyerEmailLogout(imapClient);
+    imapClient = null;
+
+    /*
+     * FASE 2:
+     * la connessione Gmail è già chiusa.
+     * Ora si convertono e pubblicano i PDF.
+     */
+    for (const candidate of candidates) {
+      try {
+        const importResult =
+          await saImportFlyerPdfBufferFromEmail(
+            candidate
+          );
+
+        if (importResult.duplicate) {
+          result.duplicates += 1;
+          saFlyerEmailState.duplicate_count += 1;
+        } else {
+          result.imported += 1;
+          saFlyerEmailState.imported_count += 1;
+
+          saFlyerEmailState.last_import_at =
+            new Date().toISOString();
+
+          saFlyerEmailState.last_import_title =
+            importResult.flyer?.title || "";
+
+          saFlyerEmailState.last_message_id =
+            candidate.sourceMessageId || "";
+        }
+      } catch (importErr) {
+        const message =
+          importErr?.message ||
+          String(importErr);
+
+        result.errors.push(message);
+
+        console.error(
+          "[SA_FLYER_EMAIL] Errore importazione PDF:",
+          importErr
+        );
+      }
+    }
+
+    saFlyerEmailState.last_result = result;
+
+    if (result.errors.length > 0) {
+      saFlyerEmailState.last_error =
+        result.errors.join(" | ").slice(0, 1000);
+    } else {
+      saFlyerEmailState.last_error = null;
+      saFlyerEmailState.last_imap_error = null;
+      saFlyerEmailState.last_success_at =
+        new Date().toISOString();
+    }
+
+    return result;
+  } catch (err) {
+    const message =
+      err?.message ||
+      String(err);
+
+    saFlyerEmailState.last_error = message;
+
+    saFlyerEmailState.last_result = {
+      ran: false,
+      reason: "error",
+      error: message
+    };
+
+    console.error(
+      "[SA_FLYER_EMAIL] Errore controllo casella:",
+      err
+    );
+
+    return saFlyerEmailState.last_result;
+  } finally {
+    if (mailboxLock) {
+      try {
+        mailboxLock.release();
+      } catch (_) {}
+
+      mailboxLock = null;
+    }
+
+    if (imapClient) {
+      await saSafeFlyerEmailLogout(imapClient);
+    }
+
+    saFlyerEmailState.running = false;
+  }
+}
+
+function saStartFlyerEmailWorker() {
+  const safeConfig = saFlyerEmailSafeConfig();
+
+  saFlyerEmailState.enabled = safeConfig.enabled;
+  saFlyerEmailState.configured = safeConfig.configured;
+
+  if (!safeConfig.enabled) {
+    console.log("[SA_FLYER_EMAIL] Worker disabilitato.");
+    return;
+  }
+
+  const intervalMs = safeConfig.poll_seconds * 1000;
+
+  console.log(`[SA_FLYER_EMAIL] Worker attivo. Poll ogni ${safeConfig.poll_seconds}s, mailbox=${safeConfig.mailbox}`);
+
+  setTimeout(() => {
+    saProcessFlyerEmailOnce({ startup: true }).catch((err) => {
+      console.error("[SA_FLYER_EMAIL] Startup poll error:", err);
+    });
+  }, 15000);
+
+  saFlyerEmailTimer = setInterval(() => {
+    saProcessFlyerEmailOnce({ scheduled: true }).catch((err) => {
+      console.error("[SA_FLYER_EMAIL] Scheduled poll error:", err);
+    });
+  }, intervalMs);
+}
+
+app.get("/api/flyers/email/status", async (req, res) => {
+  return res.json({
+    success: true,
+    config: saFlyerEmailSafeConfig(),
+    state: saFlyerEmailState
+  });
+});
+
+app.post("/api/flyers/email/check-now", async (req, res) => {
+  const result = await saProcessFlyerEmailOnce({ manual: true });
+
+  return res.json({
+    success: true,
+    result,
+    config: saFlyerEmailSafeConfig(),
+    state: saFlyerEmailState
+  });
+});
+
+saStartFlyerEmailWorker();
 
 // PATCH_84A3A_FIX1_ADMIN_FLYERS_API
 app.get("/api/flyers", async (req, res) => {
