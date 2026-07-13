@@ -114,6 +114,25 @@ const NAV_ITEMS = [
   { id: "stats", label: "Statistiche" },
 ];
 
+// PATCH_85_ADMIN_URL_NAVIGATION
+const ADMIN_SECTION_IDS = [
+  "dashboard",
+  "customers",
+  "devices",
+  "offers",
+  "guides",
+  "live",
+  "flyers",
+  "system",
+  "stats",
+];
+
+function normalizeAdminSection(value) {
+  return ADMIN_SECTION_IDS.includes(value)
+    ? value
+    : "dashboard";
+}
+
 export default function Home() {
   const [authReady, setAuthReady] = useState(false);
   const [activeSection, setActiveSection] = useState("dashboard");
@@ -230,6 +249,87 @@ export default function Home() {
     loadData();
   }, []);
 
+  // PATCH_85_ADMIN_URL_NAVIGATION_HELPERS
+  function getAdminSectionFromUrl() {
+    if (typeof window === "undefined") {
+      return "dashboard";
+    }
+
+    const searchParams = new URLSearchParams(
+      window.location.search
+    );
+
+    return normalizeAdminSection(
+      searchParams.get("section") || ""
+    );
+  }
+
+  function navigateAdminSection(section, options = {}) {
+    const normalizedSection =
+      normalizeAdminSection(section);
+
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+
+      url.searchParams.set(
+        "section",
+        normalizedSection
+      );
+
+      const nextUrl =
+        url.pathname + url.search + url.hash;
+
+      const currentUrl =
+        window.location.pathname +
+        window.location.search +
+        window.location.hash;
+
+      if (nextUrl !== currentUrl) {
+        if (options.replace) {
+          window.history.replaceState(
+            {},
+            "",
+            nextUrl
+          );
+        } else {
+          window.history.pushState(
+            {},
+            "",
+            nextUrl
+          );
+        }
+      }
+    }
+
+    setActiveSection(normalizedSection);
+  }
+
+  useEffect(() => {
+    navigateAdminSection(
+      getAdminSectionFromUrl(),
+      {
+        replace: true,
+      }
+    );
+
+    function handleAdminPopState() {
+      setActiveSection(
+        getAdminSectionFromUrl()
+      );
+    }
+
+    window.addEventListener(
+      "popstate",
+      handleAdminPopState
+    );
+
+    return () => {
+      window.removeEventListener(
+        "popstate",
+        handleAdminPopState
+      );
+    };
+  }, []);
   // PATCH_64_5_ADMIN_ANALYTICS_AUTO_REFRESH_EFFECT
   useEffect(() => {
     if (!authReady || activeSection !== "dashboard" || loading) {
@@ -1075,7 +1175,7 @@ export default function Home() {
     setDeviceReceiptQrAfterSave(false);
     setCustomerDeviceMode("new");
     setExpandedCustomerId(user.id);
-    setActiveSection("customers");
+    navigateAdminSection("customers");
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
@@ -1087,7 +1187,7 @@ export default function Home() {
     });
     setCustomerDeviceMode("device");
     setExpandedCustomerId(user.id);
-    setActiveSection("customers");
+    navigateAdminSection("customers");
     setTimeout(() => {
       const el = document.getElementById("existing-device-form");
       if (el) {
@@ -1187,7 +1287,7 @@ export default function Home() {
     setDeviceReceiptQrAfterSave(false);
     setCustomerDeviceMode("device");
     setExpandedCustomerId(device.user_id || null);
-    setActiveSection("customers");
+    navigateAdminSection("customers");
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
@@ -1370,7 +1470,7 @@ export default function Home() {
       image_url: offer.image_url || "",
     });
 
-    setActiveSection("offers");
+    navigateAdminSection("offers");
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
@@ -1488,7 +1588,7 @@ export default function Home() {
       enabled: Boolean(guide.enabled),
     });
 
-    setActiveSection("guides");
+    navigateAdminSection("guides");
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
@@ -3538,7 +3638,7 @@ export default function Home() {
               key={item.id}
               type="button"
               className={`nav-button ${activeSection === item.id ? "active" : ""}`}
-              onClick={() => setActiveSection(item.id)}
+              onClick={() => navigateAdminSection(item.id)}
             >
               {item.label}
             </button>
@@ -3568,7 +3668,7 @@ export default function Home() {
             <button
               type="button"
               className="primary-button"
-              onClick={() => setActiveSection("customers")}
+              onClick={() => navigateAdminSection("customers")}
             >
               Nuovo cliente
             </button>
@@ -6333,7 +6433,7 @@ export default function Home() {
               key={item.id}
               type="button"
               className={activeSection === item.id ? "active" : ""}
-              onClick={() => setActiveSection(item.id)}
+              onClick={() => navigateAdminSection(item.id)}
             >
               {item.label}
             </button>
