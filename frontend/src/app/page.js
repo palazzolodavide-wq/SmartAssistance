@@ -135,6 +135,10 @@ export default function Home() {
   const [flyerUploadTitle, setFlyerUploadTitle] = useState("");
   const [flyerUploading, setFlyerUploading] = useState(false);
 
+  // PATCH_84A6_ADMIN_EMAIL_MONITOR_STATE
+  const [flyerEmailStatus, setFlyerEmailStatus] = useState(null);
+  const [flyerEmailChecking, setFlyerEmailChecking] = useState(false);
+
   const [userSearch, setUserSearch] = useState("");
   const [deviceSearch, setDeviceSearch] = useState("");
   const [offerSearch, setOfferSearch] = useState("");
@@ -342,6 +346,9 @@ export default function Home() {
       // PATCH_84A3B_ADMIN_FLYERS_SETDATA
       setFlyers(Array.isArray(flyersData?.flyers) ? flyersData.flyers : []);
 
+      // PATCH_84A6_ADMIN_EMAIL_MONITOR_LOAD
+      await loadFlyerEmailStatus({ silent: true });
+
       if (liveData?.success) {
         setLiveSettings({ ...EMPTY_LIVE_SETTINGS, ...(liveData.settings || {}) });
         setLiveSources(Array.isArray(liveData.sources) ? liveData.sources : []);
@@ -531,6 +538,201 @@ export default function Home() {
     } catch (err) {
       alert(err.message);
     }
+  }
+
+  // PATCH_84A6_ADMIN_EMAIL_MONITOR_HELPERS
+  async function loadFlyerEmailStatus(options = {}) {
+    try {
+      const res = await apiFetch(`${API_URL}/api/flyers/email/status`);
+      const data = await res.json();
+
+      if (!res.ok || data.success === false) {
+        throw new Error(data.error || "Errore caricamento stato import email");
+      }
+
+      setFlyerEmailStatus(data);
+
+      return data;
+    } catch (err) {
+      if (!options.silent) {
+        alert(err.message);
+      }
+
+      return null;
+    }
+  }
+
+  async function checkFlyerEmailNow() {
+    try {
+      setFlyerEmailChecking(true);
+      setFlyerMessage("Controllo della casella email in corso...");
+
+      const res = await apiFetch(
+        `${API_URL}/api/flyers/email/check-now`,
+        {
+          method: "POST",
+        }
+      );
+
+      const data = await res.json();
+
+      if (!res.ok || data.success === false) {
+        throw new Error(data.error || "Errore controllo casella email");
+      }
+
+      if (data.result?.reason === "error") {
+        throw new Error(
+          data.result?.error ||
+          data.state?.last_error ||
+          "Errore durante il controllo della casella email"
+        );
+      }
+
+      setFlyerEmailStatus(data);
+
+      if (
+        data.result?.ran === false &&
+        data.result?.reason === "already_running"
+      ) {
+        setFlyerMessage("Il controllo della casella email è già in corso.");
+      } else if (
+        data.result?.ran === false &&
+        data.result?.reason === "disabled"
+      ) {
+        setFlyerMessage("Il servizio di importazione email è disabilitato.");
+      } else if (
+        data.result?.ran === false &&
+        data.result?.reason === "not_configured"
+      ) {
+        setFlyerMessage("Il servizio email non è configurato.");
+      } else {
+        const checked = Number(data.result?.checked || 0);
+        const imported = Number(data.result?.imported || 0);
+        const duplicates = Number(data.result?.duplicates || 0);
+        const skipped = Number(data.result?.skipped || 0);
+
+        setFlyerMessage(
+          `Controllo email completato. Messaggi: ${checked}, importati: ${imported}, duplicati: ${duplicates}, ignorati: ${skipped}.`
+        );
+      }
+
+      await loadData();
+    } catch (err) {
+      setFlyerMessage("");
+      alert(err.message);
+    } finally {
+      setFlyerEmailChecking(false);
+    }
+  }
+
+  function getFlyerEmailServiceLabel() {
+    const config = flyerEmailStatus?.config;
+    const state = flyerEmailStatus?.state;
+
+    if (!flyerEmailStatus) {
+      return "Non caricato";
+    }
+
+    if (!config?.modules_available) {
+      return "Moduli mancanti";
+    }
+
+    if (!config?.configured) {
+      return "Non configurato";
+    }
+
+    if (!config?.enabled) {
+      return "Disabilitato";
+    }
+
+    if (state?.last_error || state?.last_imap_error) {
+      return "Errore";
+    }
+
+    if (state?.running) {
+      return "Controllo in corso";
+    }
+
+    return "Operativo";
+  }
+
+  function getFlyerEmailServiceClass() {
+    const config = flyerEmailStatus?.config;
+    const state = flyerEmailStatus?.state;
+
+    if (!flyerEmailStatus) {
+      return "badge badge-blue";
+    }
+
+    if (
+      !config?.modules_available ||
+      !config?.configured ||
+      !config?.enabled
+    ) {
+      return "badge badge-orange";
+    }
+
+    if (state?.last_error || state?.last_imap_error) {
+      return "badge badge-red";
+    }
+
+    if (state?.running) {
+      return "badge badge-blue";
+    }
+
+    return "badge badge-green";
+  }
+
+  function getFlyerEmailPollLabel() {
+    const seconds = Number(
+      flyerEmailStatus?.config?.poll_seconds || 0
+    );
+
+    if (!seconds) {
+      return "-";
+    }
+
+    if (seconds >= 60 && seconds % 60 === 0) {
+      const minutes = seconds / 60;
+
+      return minutes === 1
+        ? "Ogni minuto"
+        : `Ogni ${minutes} minuti`;
+    }
+
+    return `Ogni ${seconds} secondi`;
+  }
+
+  function getLatestEmailFlyer() {
+    return flyers.find(
+      (flyer) => flyer.source_type === "email_import"
+    ) || null;
+  }
+
+  function getFlyerEmailLastResultSummary() {
+    const result = flyerEmailStatus?.state?.last_result;
+
+    if (!result) {
+      return "Nessun risultato disponibile";
+    }
+
+    if (result.reason === "disabled") {
+      return "Servizio disabilitato";
+    }
+
+    if (result.reason === "not_configured") {
+      return "Servizio non configurato";
+    }
+
+    if (result.reason === "already_running") {
+      return "Controllo già in corso";
+    }
+
+    if (result.reason === "error") {
+      return result.error || "Errore";
+    }
+
+    return `Controllati ${Number(result.checked || 0)}, importati ${Number(result.imported || 0)}, duplicati ${Number(result.duplicates || 0)}, ignorati ${Number(result.skipped || 0)}`;
   }
 
   // PATCH_84A4_ADMIN_FLYER_UPLOAD_HELPER
@@ -5180,6 +5382,172 @@ export default function Home() {
               <KpiCard label="Volantino attivo" value={flyers.find((flyer) => flyer.status === "active")?.title || "-"} />
               <KpiCard label="Pagine attive" value={flyers.find((flyer) => flyer.status === "active")?.pages_available || 0} />
               <KpiCard label="Ultimo import" value={formatSystemDate(flyers[0]?.imported_at)} />
+            </section>
+
+            {/* PATCH_84A6_ADMIN_EMAIL_MONITOR_UI */}
+            <section className="panel" style={{ marginTop: "18px" }}>
+              <div className="panel-header">
+                <div>
+                  <h2 className="panel-title">Import automatico da email</h2>
+                  <div className="panel-subtitle">
+                    Stato del servizio che controlla la casella email e pubblica automaticamente i PDF ricevuti.
+                  </div>
+                </div>
+
+                <div className="action-row">
+                  <button
+                    type="button"
+                    className="ghost-button"
+                    onClick={() => loadFlyerEmailStatus()}
+                    disabled={flyerEmailChecking}
+                  >
+                    Aggiorna stato
+                  </button>
+
+                  <button
+                    type="button"
+                    className="primary-button"
+                    onClick={checkFlyerEmailNow}
+                    disabled={
+                      flyerEmailChecking ||
+                      flyerEmailStatus?.state?.running
+                    }
+                  >
+                    {flyerEmailChecking
+                      ? "Controllo..."
+                      : flyerEmailStatus?.state?.running
+                        ? "Controllo in corso"
+                        : "Controlla ora"}
+                  </button>
+                </div>
+              </div>
+
+              <section
+                className="kpi-grid"
+                style={{ marginTop: "16px" }}
+              >
+                <KpiCard
+                  label="Servizio email"
+                  value={getFlyerEmailServiceLabel()}
+                />
+
+                <KpiCard
+                  label="Ultimo controllo riuscito"
+                  value={formatSystemDate(
+                    flyerEmailStatus?.state?.last_success_at
+                  )}
+                />
+
+                <KpiCard
+                  label="Ultimo import email"
+                  value={
+                    getLatestEmailFlyer()?.title ||
+                    "-"
+                  }
+                />
+
+                <KpiCard
+                  label="Duplicati rilevati"
+                  value={
+                    flyerEmailStatus?.state?.duplicate_count || 0
+                  }
+                />
+              </section>
+
+              <div
+                className="quick-list"
+                style={{ marginTop: "16px" }}
+              >
+                <div className="quick-item">
+                  <div>
+                    <div className="row-title">
+                      Stato servizio
+                    </div>
+                    <div className="muted-text">
+                      <span className={getFlyerEmailServiceClass()}>
+                        {getFlyerEmailServiceLabel()}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="quick-item">
+                  <div>
+                    <div className="row-title">
+                      Casella controllata
+                    </div>
+                    <div className="muted-text">
+                      {flyerEmailStatus?.config?.mailbox || "-"} · {getFlyerEmailPollLabel()}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="quick-item">
+                  <div>
+                    <div className="row-title">
+                      Protezione mittenti
+                    </div>
+                    <div className="muted-text">
+                      Allowlist: {flyerEmailStatus?.config?.from_allowlist_configured ? "configurata" : "non configurata"} ·
+                      Filtro oggetto: {flyerEmailStatus?.config?.subject_filter_configured ? "configurato" : "non configurato"}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="quick-item">
+                  <div>
+                    <div className="row-title">
+                      Ultimo risultato
+                    </div>
+                    <div className="muted-text">
+                      {getFlyerEmailLastResultSummary()}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="quick-item">
+                  <div>
+                    <div className="row-title">
+                      Ultimo PDF ricevuto
+                    </div>
+                    <div className="muted-text">
+                      {getLatestEmailFlyer()
+                        ? `${getLatestEmailFlyer().title || getLatestEmailFlyer().original_filename || "-"} · ${formatSystemDate(getLatestEmailFlyer().imported_at)}`
+                        : "Nessun volantino importato via email"}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="quick-item">
+                  <div>
+                    <div className="row-title">
+                      Messaggi ignorati
+                    </div>
+                    <div className="muted-text">
+                      {flyerEmailStatus?.state?.skipped_count || 0}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {(flyerEmailStatus?.state?.last_error ||
+                flyerEmailStatus?.state?.last_imap_error) && (
+                <div
+                  className="inline-info-box"
+                  style={{
+                    marginTop: "16px",
+                    borderColor: "#dc2626",
+                  }}
+                >
+                  <div className="row-title">
+                    Errore servizio email
+                  </div>
+                  <div className="row-subtitle">
+                    {flyerEmailStatus?.state?.last_error ||
+                      flyerEmailStatus?.state?.last_imap_error}
+                  </div>
+                </div>
+              )}
             </section>
 
             <section className="panel" style={{ marginTop: "18px" }}>
